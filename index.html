@@ -813,7 +813,7 @@ function processDailyRows(rows, cols, metricLabel='Messages') {
   }
   const sortedDays = Object.entries(dailyMap).sort(([,a],[,b])=>b-a).slice(0,10)
     .map(([date,messages],i)=>({ rank:i+1, date, messages, pct:`${(messages/totalMessages*100).toFixed(2)}%` }));
-  const allDates=Object.keys(dailyMap).sort();
+  const allDates=Object.keys(dailyMap).sort((a,b)=>parseDate_US(a)-parseDate_US(b));
   const fd=parseDate_US(allDates[0]), ld=parseDate_US(allDates[allDates.length-1]);
   const totalDays=Math.max(1,Math.round((ld-fd)/864e5)+1);
   const peak=sortedDays[0]||{};
