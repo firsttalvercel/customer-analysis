@@ -941,8 +941,11 @@ function renderDashboard(data, fileType) {
       { label:'Top Application',   val:data.peakDate||'—',           sub:data.peakMessages?fmtFull(data.peakMessages)+' '+ml.toLowerCase():'' },
     ].filter(Boolean);
   } else {
+    const _lastMonth = data.monthly?.slice(-1)[0];
     execStats = [
-      { label:`Total ${ml}`,      val:fmtFull(data.totalMessages),          sub:data.periodStart&&data.periodEnd?`${data.periodStart} – ${data.periodEnd}`:'All time' },
+      ml === 'Flows'
+        ? { label:'Total Active Flows', val:fmtFull(_lastMonth?.messages||0), sub:`Peak in ${_lastMonth?.month||'latest month'}` }
+        : { label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:data.periodStart&&data.periodEnd?`${data.periodStart} – ${data.periodEnd}`:'All time' },
       data.activeDays ? { label:'Active Days', val:data.activeDays,        sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'From data' } : null,
       data.peakMessages ? { label:`Peak Day`,  val:fmtFull(data.peakMessages), sub:data.peakDate||'Highest traffic day' } : null,
       data.avgPerDay   ? { label:`Avg / Active Day`, val:fmtFull(data.avgPerDay), sub:`${ml} per active day` } : null,
@@ -1030,9 +1033,12 @@ function renderKPIs(data, isAppMode) {
     const monthly = data.monthly||[];
     const peakMonth = monthly.reduce((a,b)=>a.messages>b.messages?a:b, monthly[0]);
     const cmgrVal = calcCMGR(monthly);
+    const lastMonth = monthly[monthly.length-1];
     if (selectedMode === 'breakdown') {
       cards = [
-        { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
+        ml === 'Flows'
+          ? { icon:'📊', label:'Total Active Flows', val:fmtFull(lastMonth?.messages||0), sub:`Peak in ${lastMonth?.month||'latest month'}` }
+          : { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
         data.activeDays
           ? { icon:'📅', label:'Active Days', val:data.activeDays, sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'Days with activity' }
           : { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months tracked' },
@@ -1049,7 +1055,9 @@ function renderKPIs(data, isAppMode) {
       ].filter(Boolean);
     } else {
       cards = [
-        { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
+        ml === 'Flows'
+          ? { icon:'📊', label:'Total Active Flows', val:fmtFull(lastMonth?.messages||0), sub:`Peak in ${lastMonth?.month||'latest month'}` }
+          : { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
         { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months in report' },
         { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+` ${mll}`:'' },
         { icon:'📊', label:`Avg ${ml} / Month`, val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
