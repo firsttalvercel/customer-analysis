@@ -31,7 +31,7 @@
       width:100%;max-width:860px;display:flex;flex-direction:column;align-items:center;gap:2rem;
     }
     .upload-brand{text-align:center;color:#fff}
-    .brand-logo{height:72px;filter:brightness(0) invert(1);display:block;margin:0 auto 1.5rem}
+    .brand-logo{height:96px;filter:brightness(0) invert(1);display:block;margin:0 auto 1.5rem}
     .brand-title{font-size:2.5rem;font-weight:800;color:#fff;margin-bottom:.625rem;line-height:1.1}
     .brand-sub{font-size:1.05rem;color:rgba(255,255,255,.78);max-width:540px;line-height:1.65;margin:0 auto}
 
@@ -98,7 +98,7 @@
     .dash-header{background:linear-gradient(150deg,#0077C5 0%,#004f9e 100%);color:#fff;padding:1.125rem 2rem}
     .dash-header-inner{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem}
     .dash-brand{display:flex;align-items:center;gap:.625rem;margin-bottom:.2rem}
-    .dash-brand img{height:34px;filter:brightness(0) invert(1);opacity:.9}
+    .dash-brand img{height:44px;filter:brightness(0) invert(1);opacity:.9}
     .dash-brand-name{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
     .dash-title h2{font-size:1.2rem;font-weight:700;line-height:1.2}
     .dash-title p{font-size:.72rem;opacity:.68;margin-top:.12rem}
@@ -648,6 +648,11 @@ async function parseSheet(file, delim) {
   else if (b[0]===0xFE && b[1]===0xFF) text = new TextDecoder('utf-16be').decode(buf.slice(2));
   else if (b[0]===0xEF && b[1]===0xBB && b[2]===0xBF) text = new TextDecoder('utf-8').decode(buf.slice(3));
   else text = new TextDecoder('utf-8').decode(buf);
+  // Auto-detect real delimiter from decoded content (file may be TSV with .csv extension)
+  const firstLine = text.split('\n')[0] || '';
+  const tabs   = (firstLine.match(/\t/g) || []).length;
+  const commas = (firstLine.match(/,/g)  || []).length;
+  if (tabs > commas) delim = '\t';
   const wb = XLSX.read(text, { type:'string', FS:delim });
   return sheetToData(wb.Sheets[wb.SheetNames[0]]);
 }
