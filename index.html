@@ -928,6 +928,7 @@ function detectAnomalies(monthly) {
 function renderDashboard(data, fileType) {
   const customer  = document.getElementById('customer-name').value.trim() || 'Customer';
   const accountId = document.getElementById('account-id').value.trim();
+  const ml = data.metricLabel || 'Messages';
 
   // Determine rendering mode
   const isAppMode  = data.dataSource === 'app-tabular';
@@ -1009,8 +1010,6 @@ function renderDashboard(data, fileType) {
   document.getElementById('peaks-table-card').style.display = (hasTimeDim && hasPeaks && isBreakdown) ? 'block' : 'none';
   document.getElementById('app-table-card').style.display   = isAppMode ? 'block' : 'none';
   document.getElementById('platform-section').style.display = (!isBreakdown || isAppMode) ? 'block' : 'none';
-
-  const ml = data.metricLabel || 'Messages';
 
   // Section labels & chart titles adapt
   document.getElementById('vol-section-label').textContent = isAppMode ? 'Volume by Application' : 'Usage Trends';
