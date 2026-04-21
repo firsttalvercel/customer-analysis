@@ -484,7 +484,7 @@
     <div class="table-card" id="peaks-table-card" style="display:none">
       <div class="card-title">Top Peak Days</div>
       <table>
-        <thead><tr><th>#</th><th>Date</th><th>Messages</th><th>% of Total</th><th>vs Avg Day</th></tr></thead>
+        <thead id="peaks-table-head"><tr><th>#</th><th>Date</th><th>Messages</th><th>% of Total</th><th>vs Avg Day</th></tr></thead>
         <tbody id="tbl-peaks"></tbody>
       </table>
     </div>
@@ -600,6 +600,7 @@ function parseReportText(text) {
   d.generated   = g(/Generated:\s*([^\n\r]+)/);
   const exactM  = text.match(/(\d{1,3}(?:,\d{3})+)\s+total messages/i);
   if (exactM) d.totalMessages = int(exactM[1]);
+  d.metricLabel = 'Messages';
   d.monthly  = parseMonthlyText(text);
   d.peakDays = parsePeakDaysText(text);
   d.apps = [];
@@ -664,17 +665,17 @@ async function parseSheet(file, delim) {
   const commas = (firstLine.match(/,/g)  || []).length;
   if (tabs > commas) delim = '\t';
   const wb = XLSX.read(text, { type:'string', FS:delim });
-  return sheetToData(wb.Sheets[wb.SheetNames[0]]);
+  return sheetToData(wb.Sheets[wb.SheetNames[0]], file.name);
 }
 async function parseExcel(file) {
   setLoading(true, 'Parsing Excel file…');
   const wb = XLSX.read(await file.arrayBuffer(), { type:'array', cellDates:true });
-  return sheetToData(wb.Sheets[wb.SheetNames[0]]);
+  return sheetToData(wb.Sheets[wb.SheetNames[0]], file.name);
 }
-function sheetToData(ws) {
+function sheetToData(ws, fileName='') {
   const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
   if (!rows||rows.length<2) throw new Error('File appears to be empty or has only a header row.');
-  return processTabular(rows);
+  return processTabular(rows, fileName);
 }
 async function parseJSON(file) {
   setLoading(true, 'Parsing JSON…');
@@ -682,14 +683,14 @@ async function parseJSON(file) {
   try { data = JSON.parse(await file.text()); } catch { throw new Error('Invalid JSON.'); }
   if (Array.isArray(data)&&data.length) {
     const keys = Object.keys(data[0]);
-    return processTabular([keys, ...data.map(r=>keys.map(k=>r[k]))]);
+    return processTabular([keys, ...data.map(r=>keys.map(k=>r[k]))], file.name);
   }
-  if (data.monthly) return { ...data, dataSource:'json', apps:data.apps||[] };
+  if (data.monthly) return { ...data, dataSource:'json', metricLabel:data.metricLabel||'Messages', apps:data.apps||[] };
   throw new Error('Unrecognized JSON format. Expected an array of records.');
 }
 
 // ── Tabular processing ────────────────────────────────────────────────────────
-function processTabular(rows) {
+function processTabular(rows, fileName='') {
   const headers  = rows[0].map(h=>String(h??'').trim());
   const dataRows = rows.slice(1).filter(r=>r.some(c=>c!==''&&c!=null));
   const cols = detectCols(headers);
@@ -701,9 +702,10 @@ function processTabular(rows) {
       }
     }
   }
-  if (cols.appCol>=0&&cols.msgCol>=0)    return processAppRows(dataRows, cols);
-  if (cols.dateCol>=0&&cols.msgCol>=0)   return processDailyRows(dataRows, cols);
-  if (cols.monthCol>=0&&cols.msgCol>=0)  return processMonthlyRows(dataRows, cols);
+  const metricLabel = getMetricLabel(cols.msgCol>=0 ? headers[cols.msgCol] : '', fileName);
+  if (cols.appCol>=0&&cols.msgCol>=0)    return processAppRows(dataRows, cols, metricLabel);
+  if (cols.dateCol>=0&&cols.msgCol>=0)   return processDailyRows(dataRows, cols, metricLabel);
+  if (cols.monthCol>=0&&cols.msgCol>=0)  return processMonthlyRows(dataRows, cols, metricLabel);
   throw new Error(`Could not detect required columns. Found: [${headers.join(', ')}]\nExpected columns like Date/Month/App and Messages/Count/Volume.`);
 }
 
@@ -739,7 +741,7 @@ function detectCols(headers) {
   };
 }
 
-function processAppRows(rows, cols) {
+function processAppRows(rows, cols, metricLabel='Messages') {
   const apps = [];
   let totalMessages=0, totalVCores=0, totalWorkers=0, totalAvgFlows=0;
   for (const row of rows) {
@@ -775,7 +777,7 @@ function processAppRows(rows, cols) {
   return {
     dataSource:'app-tabular', totalMessages, activeDays:0, totalDays:0, activeRate:0,
     peakMessages:peak.messages, peakDate:peak.name, avgPerDay:0,
-    periodStart:'', periodEnd:'', generated:'',
+    periodStart:'', periodEnd:'', generated:'', metricLabel,
     monthly, peakDays:[],
     apps, totalApps:apps.length,
     totalVCores: Math.round(totalVCores*100)/100,
@@ -786,7 +788,7 @@ function processAppRows(rows, cols) {
   };
 }
 
-function processDailyRows(rows, cols) {
+function processDailyRows(rows, cols, metricLabel='Messages') {
   const dailyMap={}, monthMap={}, monthOrder=[];
   let totalMessages=0;
   for (const row of rows) {
@@ -823,11 +825,11 @@ function processDailyRows(rows, cols) {
     avgPerDay:Math.round(totalMessages/allDates.length),
     periodStart:allDates[0]||'', periodEnd:allDates[allDates.length-1]||'',
     generated:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
-    monthly, peakDays:sortedDays, dailyData, apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
+    metricLabel, monthly, peakDays:sortedDays, dailyData, apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
   };
 }
 
-function processMonthlyRows(rows, cols) {
+function processMonthlyRows(rows, cols, metricLabel='Messages') {
   const monthly=[]; let totalMessages=0;
   for (const row of rows) {
     const monthStr=String(row[cols.monthCol]??'').trim();
@@ -853,7 +855,7 @@ function processMonthlyRows(rows, cols) {
     dataSource:'tabular', totalMessages, activeDays:0, totalDays:0, activeRate:0,
     peakMessages:peak.messages, peakDate:peak.month, avgPerDay:0,
     periodStart:monthly[0]?.month||'', periodEnd:monthly[monthly.length-1]?.month||'',
-    generated:'', monthly, peakDays:[], apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
+    generated:'', metricLabel, monthly, peakDays:[], apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
   };
 }
 
@@ -977,20 +979,20 @@ function renderDashboard(data, fileType) {
   let execStats;
   if (isAppMode) {
     execStats = [
-      { label:'Total Volume',      val:fmtFull(data.totalMessages),       sub:'Messages across all apps' },
+      { label:'Total Volume',      val:fmtFull(data.totalMessages),       sub:`${ml} across all apps` },
       { label:'Applications',      val:data.totalApps||'—',          sub:'Deployed Mule apps' },
       { label:'Total vCores',      val:data.totalVCores||'—',        sub:'Active vCores allocated' },
       { label:'Total Workers',     val:data.totalWorkers||'—',       sub:'Worker instances running' },
       { label:'Total Flows',       val:fmtFull(data.totalFlows)||'—',sub:'Integration flows' },
       { label:'Avg Flows / App',   val:data.avgFlowsPerApp||'—',     sub:'Complexity indicator' },
-      { label:'Top Application',   val:data.peakDate||'—',           sub:data.peakMessages?fmtFull(data.peakMessages)+' messages':'' },
+      { label:'Top Application',   val:data.peakDate||'—',           sub:data.peakMessages?fmtFull(data.peakMessages)+' '+ml.toLowerCase():'' },
     ].filter(Boolean);
   } else {
     execStats = [
-      { label:'Total Messages',      val:fmtFull(data.totalMessages),          sub:data.periodStart&&data.periodEnd?`${data.periodStart} – ${data.periodEnd}`:'All time' },
+      { label:`Total ${ml}`,      val:fmtFull(data.totalMessages),          sub:data.periodStart&&data.periodEnd?`${data.periodStart} – ${data.periodEnd}`:'All time' },
       data.activeDays ? { label:'Active Days', val:data.activeDays,        sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'From data' } : null,
-      data.peakMessages ? { label:'Peak Day',  val:fmtFull(data.peakMessages), sub:data.peakDate||'Highest traffic day' } : null,
-      data.avgPerDay   ? { label:'Avg / Active Day', val:fmtFull(data.avgPerDay), sub:'Messages per active day' } : null,
+      data.peakMessages ? { label:`Peak Day`,  val:fmtFull(data.peakMessages), sub:data.peakDate||'Highest traffic day' } : null,
+      data.avgPerDay   ? { label:`Avg / Active Day`, val:fmtFull(data.avgPerDay), sub:`${ml} per active day` } : null,
       cmgr      ? { label:'Monthly Growth (CMGR)', val:`${cmgr>=0?'+':''}${cmgr}%`, sub:'Compound monthly growth rate' } : null,
       projected ? { label:'Projected Next Month',  val:fmtFull(projected),             sub:'Based on recent trend' } : null,
     ].filter(Boolean);
@@ -1008,9 +1010,11 @@ function renderDashboard(data, fileType) {
   document.getElementById('app-table-card').style.display   = isAppMode ? 'block' : 'none';
   document.getElementById('platform-section').style.display = (!isBreakdown || isAppMode) ? 'block' : 'none';
 
+  const ml = data.metricLabel || 'Messages';
+
   // Section labels & chart titles adapt
   document.getElementById('vol-section-label').textContent = isAppMode ? 'Volume by Application' : 'Usage Trends';
-  document.getElementById('monthly-chart-title').textContent = isAppMode ? 'Volume by Application' : 'Monthly Message Volume';
+  document.getElementById('monthly-chart-title').textContent = isAppMode ? 'Volume by Application' : `Monthly ${ml} Volume`;
   document.getElementById('dist-chart-title').textContent    = isAppMode ? 'Share by Application' : 'Volume Distribution';
   document.getElementById('breakdown-table-title').textContent = isAppMode ? 'Application Breakdown' : 'Monthly Breakdown';
   document.getElementById('kpi-section-label').textContent   = isAppMode ? 'Platform Metrics' : 'Core Metrics';
@@ -1020,8 +1024,11 @@ function renderDashboard(data, fileType) {
   document.getElementById('breakdown-table-head').innerHTML = isAppMode
     ? '<tr><th>Application</th><th>Volume</th><th>Share of Total</th></tr>'
     : showMoMCols
-      ? '<tr><th>Month</th><th>Messages</th><th>Share of Total</th><th>MoM Change</th><th>Trend</th></tr>'
-      : '<tr><th>Month</th><th>Messages</th><th>Share of Total</th></tr>';
+      ? `<tr><th>Month</th><th>${ml}</th><th>Share of Total</th><th>MoM Change</th><th>Trend</th></tr>`
+      : `<tr><th>Month</th><th>${ml}</th><th>Share of Total</th></tr>`;
+
+  // Peak days table header
+  document.getElementById('peaks-table-head').innerHTML = `<tr><th>#</th><th>Date</th><th>${ml}</th><th>% of Total</th><th>vs Avg Day</th></tr>`;
 
   // KPIs
   renderKPIs(data, isAppMode);
@@ -1032,12 +1039,12 @@ function renderDashboard(data, fileType) {
   // Charts
   const hasDailyData = isBreakdown && !isAppMode && data.dailyData?.length > 0;
   document.getElementById('daily-chart-card').style.display = hasDailyData ? 'block' : 'none';
-  if (hasDailyData) renderChartDaily(data.dailyData);
-  renderChartMonthly(data.monthly, isAppMode);
+  if (hasDailyData) renderChartDaily(data.dailyData, ml);
+  renderChartMonthly(data.monthly, isAppMode, ml);
   renderChartDist(data.monthly, data.totalMessages, isAppMode);
   if (hasTimeDim && isBreakdown) {
     renderChartMom(data.monthly);
-    renderChartPeaks(data.peakDays, data.totalMessages);
+    renderChartPeaks(data.peakDays, data.totalMessages, ml);
   }
 
   // Insights
@@ -1055,6 +1062,8 @@ function renderDashboard(data, fileType) {
 
 // ── KPIs ─────────────────────────────────────────────────────────────────────
 function renderKPIs(data, isAppMode) {
+  const ml = data.metricLabel || 'Messages';
+  const mll = ml.toLowerCase();
   let cards;
   if (isAppMode) {
     const peak = data.apps?.reduce((a,b)=>a.messages>b.messages?a:b, data.apps?.[0]);
@@ -1064,8 +1073,8 @@ function renderKPIs(data, isAppMode) {
       { icon:'👷', label:'Total Workers',      val:data.totalWorkers||'—',       sub:'Worker instances running' },
       { icon:'🔀', label:'Total Flows',         val:fmtFull(data.totalFlows)||'—',sub:'Integration flows across apps' },
       { icon:'📐', label:'Avg Flows / App',     val:data.avgFlowsPerApp||'—',     sub:'Complexity indicator' },
-      { icon:'💬', label:'Total Volume',        val:fmtFull(data.totalMessages),      sub:'Messages across all apps' },
-      { icon:'🏆', label:'Top Application',     val:peak?.name||'—',             sub:peak?fmtFull(peak.messages)+' messages':'Highest volume app' },
+      { icon:'💬', label:`Total ${ml}`,        val:fmtFull(data.totalMessages),      sub:`${ml} across all apps` },
+      { icon:'🏆', label:'Top Application',     val:peak?.name||'—',             sub:peak?fmtFull(peak.messages)+` ${mll}`:'Highest volume app' },
     ];
   } else {
     const monthly = data.monthly||[];
@@ -1073,27 +1082,27 @@ function renderKPIs(data, isAppMode) {
     const cmgrVal = calcCMGR(monthly);
     if (selectedMode === 'breakdown') {
       cards = [
-        { icon:'💬', label:'Total Messages', val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
+        { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
         data.activeDays
           ? { icon:'📅', label:'Active Days', val:data.activeDays, sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'Days with activity' }
           : { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months tracked' },
         data.peakMessages&&data.peakDate
           ? { icon:'🔥', label:'Peak Day', val:fmtFull(data.peakMessages), sub:data.peakDate }
-          : { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
+          : { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+` ${mll}`:'' },
         data.avgPerDay
-          ? { icon:'📈', label:'Avg / Active Day', val:fmtFull(data.avgPerDay), sub:'Messages per active day' }
-          : { icon:'📊', label:'Avg / Month', val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
+          ? { icon:'📈', label:'Avg / Active Day', val:fmtFull(data.avgPerDay), sub:`${ml} per active day` }
+          : { icon:'📊', label:`Avg ${ml} / Month`, val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
         cmgrVal !== null
           ? { icon:'📉', label:'Monthly Growth (CMGR)', val:`${+cmgrVal>=0?'+':''}${cmgrVal}%`, sub:'Compound monthly growth' }
           : { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months tracked' },
-        { icon:'🏔️', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
+        { icon:'🏔️', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+` ${mll}`:'' },
       ].filter(Boolean);
     } else {
       cards = [
-        { icon:'💬', label:'Total Messages', val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
+        { icon:'💬', label:`Total ${ml}`, val:fmtFull(data.totalMessages), sub:'All-time cumulative' },
         { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months in report' },
-        { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
-        { icon:'📊', label:'Avg / Month', val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
+        { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+` ${mll}`:'' },
+        { icon:'📊', label:`Avg ${ml} / Month`, val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
         data.totalApps>0 ? { icon:'📦', label:'Applications', val:data.totalApps, sub:'Deployed Mule apps' } : null,
         data.totalFlows>0 ? { icon:'🔀', label:'Total Flows', val:fmtFull(data.totalFlows), sub:'Integration flows' } : null,
       ].filter(Boolean);
@@ -1138,7 +1147,7 @@ function axes(yFmt=v=>fmt(v,true)) {
   return { x:{grid:{display:false},ticks:{font:{size:10},color:MUTED}}, y:{grid:{color:'#F5F7FA'},ticks:{callback:yFmt,font:{size:10},color:MUTED}} };
 }
 
-function renderChartMonthly(monthly, isAppMode) {
+function renderChartMonthly(monthly, isAppMode, metricLabel='Messages') {
   const vals=monthly.map(m=>m.messages), maxVal=Math.max(...vals);
   const trend=monthly.map((_,i)=>avg(monthly.slice(Math.max(0,i-1),i+2).map(s=>s.messages)));
   const badge=document.getElementById('trend-badge');
@@ -1149,17 +1158,17 @@ function renderChartMonthly(monthly, isAppMode) {
     badge.className=`card-badge ${pct>=0?'pos':'neg'}`;
     badge.style.display='inline-block';
   } else { badge.style.display='none'; }
-
+  const mll = metricLabel.toLowerCase();
   mkChart('chart-monthly',{
     data:{
       labels:monthly.map(m=>m.month),
       datasets:[
-        {type:'bar', data:vals, label:'Messages', backgroundColor:isAppMode?PALETTE.map((_,i)=>PALETTE[i%PALETTE.length]).slice(0,vals.length):vals.map(v=>v===maxVal?BLUE:BLUE_L), borderRadius:5, borderSkipped:false},
+        {type:'bar', data:vals, label:metricLabel, backgroundColor:isAppMode?PALETTE.map((_,i)=>PALETTE[i%PALETTE.length]).slice(0,vals.length):vals.map(v=>v===maxVal?BLUE:BLUE_L), borderRadius:5, borderSkipped:false},
         ...(!isAppMode?[{type:'line',data:trend,borderColor:'rgba(0,119,197,.35)',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.4}]:[])
       ]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.type==='line'?` Avg: ${fmtFull(Math.round(c.parsed.y))}`:` ${fmtFull(c.parsed.y)} messages`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.dataset.type==='line'?` Avg: ${fmtFull(Math.round(c.parsed.y))}`:` ${fmtFull(c.parsed.y)} ${mll}`}}},
       scales:axes()
     }
   });
@@ -1182,7 +1191,7 @@ function renderChartDist(monthly, total, isAppMode) {
   });
 }
 
-function renderChartDaily(dailyData) {
+function renderChartDaily(dailyData, metricLabel='Messages') {
   if (!dailyData?.length) return;
   // Build month label for first day of each month
   const labels = dailyData.map(d => {
@@ -1191,6 +1200,7 @@ function renderChartDaily(dailyData) {
   });
   const vals = dailyData.map(d => d.messages);
   const maxVal = Math.max(...vals);
+  const mll = metricLabel.toLowerCase();
   mkChart('chart-daily', {
     type:'bar',
     data:{
@@ -1198,7 +1208,7 @@ function renderChartDaily(dailyData) {
       datasets:[{ data:vals, backgroundColor:vals.map(v=>v===maxVal?BLUE:BLUE_L), borderRadius:2, borderSkipped:false }]
     },
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{title:([c])=>c.label,label:c=>` ${fmtFull(c.parsed.y)} messages`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:([c])=>c.label,label:c=>` ${fmtFull(c.parsed.y)} ${mll}`}}},
       scales:{
         x:{grid:{display:false},ticks:{callback:(_v,i)=>labels[i],font:{size:9},color:MUTED,maxRotation:0}},
         y:{grid:{color:'#F5F7FA'},ticks:{callback:v=>fmt(v,true),font:{size:9},color:MUTED}}
@@ -1221,17 +1231,18 @@ function renderChartMom(monthly) {
   });
 }
 
-function renderChartPeaks(peakDays, total) {
+function renderChartPeaks(peakDays, total, metricLabel='Messages') {
   const wrap=document.getElementById('chart-peaks-wrap');
   if (!peakDays?.length) { wrap.innerHTML='<div class="chart-empty">No daily peak data available</div>'; return; }
   if (!wrap.querySelector('canvas')) { const c=document.createElement('canvas'); c.id='chart-peaks'; wrap.appendChild(c); }
   const labels=peakDays.slice(0,10).map(d=>fmtDate(d.date));
   const vals=peakDays.slice(0,10).map(d=>d.messages);
+  const mll = metricLabel.toLowerCase();
   mkChart('chart-peaks',{
     type:'bar',
     data:{labels,datasets:[{data:vals,backgroundColor:vals.map((_,i)=>i<3?BLUE:BLUE_L),borderRadius:4,borderSkipped:false,indexAxis:'y'}]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtFull(c.parsed.x)} messages`}}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${fmtFull(c.parsed.x)} ${mll}`}}},
       scales:{x:{grid:{color:'#F5F7FA'},ticks:{callback:v=>fmt(v,true),font:{size:9},color:MUTED}},y:{grid:{display:false},ticks:{font:{size:9},color:MUTED}}}
     }
   });
@@ -1240,6 +1251,7 @@ function renderChartPeaks(peakDays, total) {
 // ── Insights ──────────────────────────────────────────────────────────────────
 function renderInsights(data, isAppMode, customer, cmgr, projected) {
   const { monthly=[], activeDays, totalDays, peakDays=[], totalMessages, apps=[], totalApps } = data;
+  const mll = (data.metricLabel || 'Messages').toLowerCase();
   const ins = [];
 
   if (isAppMode) {
@@ -1247,7 +1259,7 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
     const sorted=[...apps].sort((a,b)=>b.messages-a.messages);
     const top=sorted[0];
     if (top) ins.push({type:'blue',title:'Top Application',
-      text:`<strong>${top.name}</strong> is the highest-volume application with <strong>${fmtFull(top.messages)}</strong> messages — <strong>${top.pct}</strong> of total platform traffic.`
+      text:`<strong>${top.name}</strong> is the highest-volume application with <strong>${fmtFull(top.messages)}</strong> ${mll} — <strong>${top.pct}</strong> of total platform traffic.`
     });
     if (apps.length>=2) {
       const top3sum=sorted.slice(0,3).reduce((s,a)=>s+a.messages,0);
@@ -1275,14 +1287,14 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
     }
     const volPerApp=Math.round(totalMessages/totalApps);
     ins.push({type:'blue',title:'Average Volume per App',
-      text:`On average, each application processes <strong>${fmtFull(volPerApp)}</strong> messages. Applications significantly above this average may be candidates for scaling or refactoring.`
+      text:`On average, each application processes <strong>${fmtFull(volPerApp)}</strong> ${mll}. Applications significantly above this average may be candidates for scaling or refactoring.`
     });
   } else {
     const isBreakdownMode = selectedMode === 'breakdown';
     // Time-series insights
     const topM=monthly.reduce((a,b)=>a.messages>b.messages?a:b,monthly[0]);
     if (topM) ins.push({type:'blue',title:isBreakdownMode?'Busiest Period':'Peak Month',
-      text:`<strong>${topM.month}</strong> was the highest-traffic month with <strong>${fmtFull(topM.messages)}</strong> messages${topM.share?` (${topM.share} of total)`:''}. Understanding what drove this spike can inform capacity planning.`
+      text:`<strong>${topM.month}</strong> was the highest-traffic month with <strong>${fmtFull(topM.messages)}</strong> ${mll}${topM.share?` (${topM.share} of total)`:''}. Understanding what drove this spike can inform capacity planning.`
     });
 
     if (monthly.length>=6) {
@@ -1302,7 +1314,7 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
       });
 
       if (projected) ins.push({type:'teal',title:'Next Month Projection',
-        text:`Based on the recent trajectory, next month is estimated at <strong>${fmtFull(projected)}</strong> messages. ${projected>topM.messages?'This would set a new monthly record — ensure capacity is adequate.':'Still below the peak of '+fmtFull(topM.messages)+' ('+topM.month+').'}`
+        text:`Based on the recent trajectory, next month is estimated at <strong>${fmtFull(projected)}</strong> ${mll}. ${projected>topM.messages?'This would set a new monthly record — ensure capacity is adequate.':'Still below the peak of '+fmtFull(topM.messages)+' ('+topM.month+').'}`
       });
 
       if (activeDays&&totalDays) {
@@ -1315,7 +1327,7 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
       if (peakDays.length&&totalMessages) {
         const d1=peakDays[0], topPct=(d1.messages/totalMessages*100).toFixed(1);
         ins.push({type:+topPct>12?'yellow':'blue',title:'Peak Day Concentration',
-          text:`${fmtDate(d1.date)} drove <strong>${d1.pct}</strong> of all-time traffic (<strong>${fmtFull(d1.messages)}</strong> messages). ${+topPct>15?'High single-day concentration suggests campaigns or batch jobs — review scaling policies.':'Peak traffic is well distributed relative to total volume.'}`
+          text:`${fmtDate(d1.date)} drove <strong>${d1.pct}</strong> of all-time traffic (<strong>${fmtFull(d1.messages)}</strong> ${mll}). ${+topPct>15?'High single-day concentration suggests campaigns or batch jobs — review scaling policies.':'Peak traffic is well distributed relative to total volume.'}`
         });
       }
 
@@ -1409,6 +1421,16 @@ function downloadPDF() {
 window.onafterprint=()=>{ const btn=document.querySelector('.btn-dl'); if(btn){btn.innerHTML='<svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12l-4-4h2.5V3h3v5H12L8 12zm-5 2h10v1.5H3V14z"/></svg> Download PDF'; btn.disabled=false;} };
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+function getMetricLabel(headerName, fileName) {
+  const h = String(headerName||'').toLowerCase().replace(/[^a-z]/g,'');
+  const f = String(fileName||'').toLowerCase();
+  if (h.includes('flow') || /flow/i.test(f)) return 'Flows';
+  if (h.includes('throughput') || /throughput/i.test(f)) return 'Throughput';
+  if (h.includes('event') || /\bevent/i.test(f)) return 'Events';
+  if (h.includes('transaction') || /transaction/i.test(f)) return 'Transactions';
+  if (h.includes('call') || /\bcall/i.test(f)) return 'Calls';
+  return 'Messages';
+}
 function compact2num(s){if(!s)return 0;s=String(s).trim().replace(/,/g,'');const m=s.match(/([\d.]+)\s*([KMBkmb]?)/);if(!m)return parseFloat(s)||0;const n=parseFloat(m[1]),u=m[2].toUpperCase();if(u==='B')return n*1e9;if(u==='M')return n*1e6;if(u==='K')return n*1e3;return n;}
 function int(s){return parseInt(String(s??'').replace(/,/g,''))||0;}
 function avg(arr){return arr.reduce((a,b)=>a+b,0)/arr.length;}
