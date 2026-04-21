@@ -139,13 +139,6 @@
     .exec-banner{background:linear-gradient(135deg,#0077C5 0%,#005fa3 100%);padding:1.625rem 2rem;color:#fff;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem}
     .exec-banner-left h3{font-size:1.3rem;font-weight:800;margin-bottom:.2rem}
     .exec-banner-left p{font-size:.78rem;opacity:.75}
-    .exec-score{text-align:center;flex-shrink:0}
-    .score-ring{position:relative;width:78px;height:78px;margin:0 auto .3rem}
-    .score-ring svg{width:78px;height:78px;transform:rotate(-90deg)}
-    .score-ring-val{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    .score-ring-val strong{font-size:1.25rem;font-weight:800;line-height:1}
-    .score-ring-val span{font-size:.58rem;opacity:.7;font-weight:600;margin-top:.1rem}
-    .score-label{font-size:.68rem;font-weight:700;letter-spacing:.04em}
     .exec-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));padding:1.125rem 2rem;gap:.875rem;border-bottom:1px solid var(--bg)}
     .exec-stat{min-width:0}
     .exec-stat-label{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:.15rem}
@@ -389,20 +382,6 @@
           <h3 id="exec-customer">Customer Report</h3>
           <p id="exec-period"></p>
           <p id="exec-account" style="opacity:.55;font-size:.7rem;margin-top:.15rem"></p>
-        </div>
-        <div class="exec-score">
-          <div class="score-ring">
-            <svg viewBox="0 0 78 78">
-              <circle cx="39" cy="39" r="33" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="7"/>
-              <circle id="score-arc" cx="39" cy="39" r="33" fill="none" stroke="white" stroke-width="7"
-                stroke-linecap="round" stroke-dasharray="207" stroke-dashoffset="207"/>
-            </svg>
-            <div class="score-ring-val">
-              <strong id="score-val">—</strong>
-              <span>/100</span>
-            </div>
-          </div>
-          <div class="score-label" id="score-label">Health Score</div>
         </div>
       </div>
       <div class="exec-stats" id="exec-stats"></div>
@@ -799,12 +778,16 @@ function processDailyRows(rows, cols, metricLabel='Messages') {
     const mk = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
     const ml = date.toLocaleString('en-US',{month:'short'})+' '+date.getFullYear();
     dailyMap[ds]=(dailyMap[ds]||0)+msgs;
-    if (!monthMap[mk]) { monthMap[mk]={month:ml,messages:0,days:0}; monthOrder.push(mk); }
-    monthMap[mk].messages+=msgs; monthMap[mk].days++; totalMessages+=msgs;
+    if (!monthMap[mk]) { monthMap[mk]={month:ml,messages:0,peak:0,days:0}; monthOrder.push(mk); }
+    monthMap[mk].messages+=msgs; monthMap[mk].peak=Math.max(monthMap[mk].peak,msgs); monthMap[mk].days++; totalMessages+=msgs;
   }
   if (!totalMessages) throw new Error('No valid date/message rows found. Check column formats.');
   monthOrder.sort();
   const monthly = monthOrder.map(k=>monthMap[k]);
+  if (metricLabel === 'Flows') {
+    monthly.forEach(m => { m.messages = m.peak; });
+    totalMessages = monthly.reduce((s,m) => s+m.messages, 0);
+  }
   let prev=0;
   for (const m of monthly) {
     m.share=`${(m.messages/totalMessages*100).toFixed(1)}%`;
@@ -871,41 +854,7 @@ function parseAnyDate(v) {
 function parseDate_US(s) { const p=s.split('/'); return new Date(+p[2],+p[0]-1,+p[1]); }
 function numFromCell(v) { if (typeof v==='number') return Math.round(v); return int(String(v??'').replace(/[$€£¥,\s]/g,'')); }
 
-// ── Health score ─────────────────────────────────────────────────────────────
-function calcHealthScore(data) {
-  let score=65;
-  const { monthly=[], activeDays, totalDays, peakDays=[], totalMessages, dataSource } = data;
-  if (activeDays&&totalDays) {
-    const r=activeDays/totalDays;
-    if (r>=.9) score+=18; else if (r>=.8) score+=10; else if (r>=.65) score+=3; else if (r<.5) score-=15;
-  }
-  if (monthly.length>=6) {
-    const ra=avg(monthly.slice(-3).map(m=>m.messages));
-    const pa=avg(monthly.slice(-6,-3).map(m=>m.messages));
-    const pct=(ra-pa)/pa;
-    if (pct>.2) score+=15; else if (pct>.05) score+=8; else if (pct<-.3) score-=12; else if (pct<-.1) score-=5;
-  }
-  if (monthly.length>=3) {
-    const vals=monthly.map(m=>m.messages), mn=avg(vals);
-    const sd=Math.sqrt(avg(vals.map(v=>(v-mn)**2)));
-    const cv=mn>0?sd/mn:1;
-    if (cv<.4) score+=10; else if (cv>1.5) score-=8;
-  }
-  if (monthly.length>=6) score+=5;
-  if (peakDays.length>=5) score+=3;
-  if (peakDays.length&&totalMessages) {
-    const top=peakDays[0].messages/totalMessages;
-    if (top>.15) score-=8; else if (top<.05) score+=5;
-  }
-  if (dataSource==='app-tabular'&&data.totalApps>0) score=Math.min(100,70+data.totalApps);
-  return Math.min(100,Math.max(5,Math.round(score)));
-}
-function scoreLabel(s) {
-  if (s>=85) return { label:'Excellent 🟢', color:'#059669' };
-  if (s>=70) return { label:'Good 🔵',      color:'#0077C5' };
-  if (s>=50) return { label:'Fair 🟡',      color:'#D97706' };
-  return            { label:'Needs Attention 🔴', color:'#DC2626' };
-}
+// ── CMGR / projection
 function calcCMGR(monthly) {
   if (monthly.length<2) return null;
   const f=monthly[0].messages, l=monthly[monthly.length-1].messages, n=monthly.length-1;
@@ -978,14 +927,6 @@ function renderDashboard(data, fileType) {
   document.getElementById('exec-period').textContent   = execPeriodParts.join('  ·  ');
   document.getElementById('exec-account').textContent  = accountId ? `Org ID: ${accountId}` : '';
 
-  const score = calcHealthScore(data);
-  const { label, color } = scoreLabel(score);
-  document.getElementById('score-val').textContent   = score;
-  document.getElementById('score-label').textContent = label;
-  const circ = 2*Math.PI*33;
-  document.getElementById('score-arc').style.strokeDashoffset = circ-(circ*score/100);
-  document.getElementById('score-arc').style.stroke = color;
-
   // Exec stats — adapt to mode
   const cmgr      = !isAppMode ? calcCMGR(data.monthly) : null;
   const projected = !isAppMode ? projectNext(data.monthly) : null;
@@ -996,7 +937,6 @@ function renderDashboard(data, fileType) {
       { label:'Applications',      val:data.totalApps||'—',          sub:'Deployed Mule apps' },
       { label:'Total vCores',      val:data.totalVCores||'—',        sub:'Active vCores allocated' },
       { label:'Total Workers',     val:data.totalWorkers||'—',       sub:'Worker instances running' },
-      { label:'Total Flows',       val:fmtFull(data.totalFlows)||'—',sub:'Integration flows' },
       { label:'Avg Flows / App',   val:data.avgFlowsPerApp||'—',     sub:'Complexity indicator' },
       { label:'Top Application',   val:data.peakDate||'—',           sub:data.peakMessages?fmtFull(data.peakMessages)+' '+ml.toLowerCase():'' },
     ].filter(Boolean);
@@ -1082,7 +1022,6 @@ function renderKPIs(data, isAppMode) {
       { icon:'📦', label:'Total Applications', val:data.totalApps||'—',          sub:'Deployed Mule applications' },
       { icon:'⚙️',  label:'Total vCores',       val:data.totalVCores||'—',        sub:'Active vCores allocated' },
       { icon:'👷', label:'Total Workers',      val:data.totalWorkers||'—',       sub:'Worker instances running' },
-      { icon:'🔀', label:'Total Flows',         val:fmtFull(data.totalFlows)||'—',sub:'Integration flows across apps' },
       { icon:'📐', label:'Avg Flows / App',     val:data.avgFlowsPerApp||'—',     sub:'Complexity indicator' },
       { icon:'💬', label:`Total ${ml}`,        val:fmtFull(data.totalMessages),      sub:`${ml} across all apps` },
       { icon:'🏆', label:'Top Application',     val:peak?.name||'—',             sub:peak?fmtFull(peak.messages)+` ${mll}`:'Highest volume app' },
@@ -1115,7 +1054,6 @@ function renderKPIs(data, isAppMode) {
         { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+` ${mll}`:'' },
         { icon:'📊', label:`Avg ${ml} / Month`, val:fmtFull(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
         data.totalApps>0 ? { icon:'📦', label:'Applications', val:data.totalApps, sub:'Deployed Mule apps' } : null,
-        data.totalFlows>0 ? { icon:'🔀', label:'Total Flows', val:fmtFull(data.totalFlows), sub:'Integration flows' } : null,
       ].filter(Boolean);
     }
   }
@@ -1463,11 +1401,6 @@ function clearAllData() {
   if (dailyCtx) dailyCtx.replaceWith(dailyCtx.cloneNode(false));
   const peaksWrap = document.getElementById('chart-peaks-wrap');
   if (peaksWrap) peaksWrap.innerHTML = '<canvas id="chart-peaks"></canvas>';
-
-  // Clear score ring
-  const arc = document.getElementById('score-arc');
-  if (arc) { arc.style.strokeDashoffset='207'; arc.style.stroke='rgba(255,255,255,.2)'; }
-  const sv = document.getElementById('score-val'); if(sv) sv.textContent='—';
 
   // Clear file input so the same file can be re-uploaded and to drop the blob reference
   const fi = document.getElementById('file-input');
