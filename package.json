@@ -1,13 +1,12 @@
 {
-  "name": "customer-analysis",
+  "name": "customer-usage-analyzer",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Single-page sales tool for analyzing Vercel Message Usage Reports",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npx serve . --listen 3000",
+    "deploy": "vercel --prod"
   },
-  "keywords": [],
+  "keywords": ["vercel", "usage-report", "sales", "analytics"],
   "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "license": "ISC"
 }

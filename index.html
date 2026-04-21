@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customer Usage Analyzer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F1F5F9;
+      color: #1E293B;
+      min-height: 100vh;
+    }
+
+    /* ── Upload ── */
+    #upload-section {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+    }
+
+    .upload-card {
+      background: white;
+      border-radius: 1.5rem;
+      padding: 3rem;
+      max-width: 580px;
+      width: 100%;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+    }
+
+    .upload-logo { text-align: center; margin-bottom: 2rem; }
+    .upload-logo .icon { font-size: 2.75rem; margin-bottom: 0.5rem; }
+    .upload-logo h1 { font-size: 1.625rem; font-weight: 700; color: #1E293B; }
+    .upload-logo p { color: #64748B; margin-top: 0.375rem; font-size: 0.9rem; }
+
+    .field-group { margin-bottom: 1.25rem; }
+    .field-group label { display: block; font-size: 0.8rem; font-weight: 600; color: #374151; margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .field-group input {
+      width: 100%; padding: 0.7rem 1rem;
+      border: 2px solid #E5E7EB; border-radius: 0.625rem;
+      font-size: 0.975rem; outline: none; transition: border-color 0.2s;
+    }
+    .field-group input:focus { border-color: #4F46E5; }
+
+    .drop-zone {
+      border: 2px dashed #C7D2FE; border-radius: 1rem;
+      padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
+      transition: all 0.2s; background: #F8FAFF;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: #4F46E5; background: #EEF2FF; }
+    .drop-zone .dz-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+    .drop-zone h3 { font-size: 1rem; font-weight: 600; color: #374151; margin-bottom: 0.375rem; }
+    .drop-zone p { color: #94A3B8; font-size: 0.825rem; }
+
+    .btn { display: inline-block; margin-top: 1rem; padding: 0.625rem 1.375rem; background: #4F46E5; color: white; border: none; border-radius: 0.625rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn:hover { background: #4338CA; }
+
+    #file-input { display: none; }
+
+    .loading { display: none; text-align: center; padding: 1.75rem 0; }
+    .spinner { width: 36px; height: 36px; border: 3px solid #E5E7EB; border-top-color: #4F46E5; border-radius: 50%; animation: spin 0.75s linear infinite; margin: 0 auto 0.75rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p { color: #64748B; font-size: 0.85rem; }
+
+    #error-msg { display: none; margin-top: 1rem; padding: 0.75rem 1rem; background: #FEF2F2; border: 1px solid #FECACA; border-radius: 0.5rem; color: #DC2626; font-size: 0.85rem; text-align: center; }
+
+    /* ── Dashboard ── */
+    #dashboard { display: none; }
+
+    .dash-header {
+      background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+      color: white; padding: 1.5rem 2rem;
+    }
+    .dash-header-inner { max-width: 1200px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+    .dash-title h2 { font-size: 1.375rem; font-weight: 700; }
+    .dash-title p { opacity: 0.75; font-size: 0.8rem; margin-top: 0.2rem; }
+
+    .btn-ghost { padding: 0.5rem 1.1rem; background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.35); color: white; border-radius: 0.625rem; font-size: 0.825rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .btn-ghost:hover { background: rgba(255,255,255,0.25); }
+
+    .dash-body { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+    /* KPI */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 1.25rem; margin-bottom: 1.75rem; }
+    .kpi-card { background: white; border-radius: 1rem; padding: 1.375rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 1rem; }
+    .kpi-icon { width: 50px; height: 50px; border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1.375rem; }
+    .kpi-icon.blue   { background: #EEF2FF; }
+    .kpi-icon.green  { background: #ECFDF5; }
+    .kpi-icon.orange { background: #FFF7ED; }
+    .kpi-icon.purple { background: #F5F3FF; }
+    .kpi-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; margin-bottom: 0.2rem; }
+    .kpi-value { font-size: 1.75rem; font-weight: 700; color: #1E293B; line-height: 1.1; }
+    .kpi-sub { font-size: 0.72rem; color: #94A3B8; margin-top: 0.2rem; }
+
+    /* Charts */
+    .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.25rem; margin-bottom: 1.75rem; }
+    .chart-card { background: white; border-radius: 1rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .chart-card h3 { font-size: 0.9rem; font-weight: 700; color: #1E293B; margin-bottom: 1rem; }
+    .chart-wrap { position: relative; height: 260px; }
+
+    /* Insights */
+    .insights-card { background: white; border-radius: 1rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1.75rem; }
+    .insights-card h3 { font-size: 0.9rem; font-weight: 700; color: #1E293B; margin-bottom: 1rem; }
+    .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 1rem; }
+    .insight { border-left: 3px solid; padding: 0.875rem 1rem; border-radius: 0 0.5rem 0.5rem 0; }
+    .insight.blue   { border-color: #3B82F6; background: #EFF6FF; }
+    .insight.green  { border-color: #10B981; background: #ECFDF5; }
+    .insight.yellow { border-color: #F59E0B; background: #FFFBEB; }
+    .insight.red    { border-color: #EF4444; background: #FEF2F2; }
+    .insight.violet { border-color: #8B5CF6; background: #F5F3FF; }
+    .insight-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
+    .insight.blue   .insight-title { color: #1D4ED8; }
+    .insight.green  .insight-title { color: #065F46; }
+    .insight.yellow .insight-title { color: #92400E; }
+    .insight.red    .insight-title { color: #991B1B; }
+    .insight.violet .insight-title { color: #4C1D95; }
+    .insight-text { font-size: 0.85rem; color: #374151; line-height: 1.5; }
+
+    /* Tables */
+    .table-card { background: white; border-radius: 1rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1.75rem; overflow-x: auto; }
+    .table-card h3 { font-size: 0.9rem; font-weight: 700; color: #1E293B; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94A3B8; padding: 0.625rem 1rem; border-bottom: 1px solid #F1F5F9; }
+    td { padding: 0.8rem 1rem; border-bottom: 1px solid #F8FAFC; font-size: 0.875rem; color: #374151; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #FAFAFA; }
+
+    .badge { display: inline-block; padding: 0.2rem 0.625rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600; }
+    .up   { background: #ECFDF5; color: #059669; }
+    .down { background: #FEF2F2; color: #DC2626; }
+    .flat { background: #F1F5F9; color: #64748B; }
+
+    .rank-badge { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: #EEF2FF; color: #4F46E5; font-size: 0.75rem; font-weight: 700; }
+    .rank-badge.top { background: #FEF3C7; color: #92400E; }
+
+    @media (max-width: 640px) {
+      .charts-grid { grid-template-columns: 1fr; }
+      .dash-body { padding: 1rem; }
+      .upload-card { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ UPLOAD ═══════════════════════════ -->
+<section id="upload-section">
+  <div class="upload-card">
+    <div class="upload-logo">
+      <div class="icon">📊</div>
+      <h1>Customer Usage Analyzer</h1>
+      <p>Upload a Message Usage Report to generate instant insights for sales</p>
+    </div>
+
+    <div class="field-group">
+      <label for="customer-name">Customer Name</label>
+      <input type="text" id="customer-name" placeholder="e.g. Acme Corp" />
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+      <div class="dz-icon">📄</div>
+      <h3>Drop your report here</h3>
+      <p>PDF or HTML — Message Usage Report format</p>
+      <button class="btn" onclick="document.getElementById('file-input').click()">Browse File</button>
+    </div>
+
+    <input type="file" id="file-input" accept=".pdf,.html,.htm" />
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Analyzing report…</p>
+    </div>
+
+    <div id="error-msg"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ DASHBOARD ══════════════════════════ -->
+<section id="dashboard">
+  <div class="dash-header">
+    <div class="dash-header-inner">
+      <div class="dash-title">
+        <h2 id="dash-title-text">Usage Analysis</h2>
+        <p id="dash-subtitle"></p>
+      </div>
+      <button class="btn-ghost" onclick="resetToUpload()">+ New Report</button>
+    </div>
+  </div>
+
+  <div class="dash-body">
+    <!-- KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon blue">💬</div>
+        <div>
+          <div class="kpi-label">Total Messages</div>
+          <div class="kpi-value" id="kpi-total">—</div>
+          <div class="kpi-sub">All-time cumulative</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon green">📅</div>
+        <div>
+          <div class="kpi-label">Active Days</div>
+          <div class="kpi-value" id="kpi-days">—</div>
+          <div class="kpi-sub" id="kpi-days-sub">—</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon orange">🔥</div>
+        <div>
+          <div class="kpi-label">Peak Day</div>
+          <div class="kpi-value" id="kpi-peak">—</div>
+          <div class="kpi-sub" id="kpi-peak-date">Single day record</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon purple">📈</div>
+        <div>
+          <div class="kpi-label">Avg / Active Day</div>
+          <div class="kpi-value" id="kpi-avg">—</div>
+          <div class="kpi-sub">Messages per active day</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>Monthly Message Volume</h3>
+        <div class="chart-wrap"><canvas id="chart-monthly"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Month-over-Month Change</h3>
+        <div class="chart-wrap"><canvas id="chart-mom"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Insights -->
+    <div class="insights-card">
+      <h3>Key Insights</h3>
+      <div class="insights-grid" id="insights-grid"></div>
+    </div>
+
+    <!-- Monthly table -->
+    <div class="table-card">
+      <h3>Monthly Breakdown</h3>
+      <table>
+        <thead><tr><th>Month</th><th>Messages</th><th>Share of Total</th><th>MoM Change</th></tr></thead>
+        <tbody id="tbl-monthly"></tbody>
+      </table>
+    </div>
+
+    <!-- Peak days table -->
+    <div class="table-card">
+      <h3>Top Peak Days</h3>
+      <table>
+        <thead><tr><th>#</th><th>Date</th><th>Messages</th><th>% of Total</th></tr></thead>
+        <tbody id="tbl-peaks"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script>
+// ── PDF.js worker ───────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+let chartMonthly = null;
+let chartMom     = null;
+
+// ── Drag & drop wiring ──────────────────────────────────────────────────────
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) processFile(e.target.files[0]);
+});
+
+// ── File processing ─────────────────────────────────────────────────────────
+async function processFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  setLoading(true);
+  setError('');
+
+  try {
+    let data;
+    if (ext === 'pdf') {
+      data = await parsePDF(file);
+    } else if (ext === 'html' || ext === 'htm') {
+      data = await parseHTML(file);
+    } else {
+      throw new Error('Unsupported file type. Please upload a PDF or HTML report.');
+    }
+
+    if (!data.monthly || data.monthly.length === 0) {
+      throw new Error('Could not find monthly data. Make sure this is a Message Usage Report.');
+    }
+
+    renderDashboard(data);
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── PDF → text ──────────────────────────────────────────────────────────────
+async function parsePDF(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+  let allLines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    allLines = allLines.concat(itemsToLines(content.items));
+  }
+
+  return parseReport(allLines.join('\n'));
+}
+
+// Group PDF text items by vertical position into readable lines
+function itemsToLines(items) {
+  const pts = items
+    .filter(i => i.str && i.str.trim())
+    .map(i => ({ x: i.transform[4], y: i.transform[5], t: i.str }))
+    .sort((a, b) => b.y - a.y || a.x - b.x);
+
+  if (!pts.length) return [];
+
+  const lines = [];
+  let group = [pts[0]];
+
+  for (let i = 1; i < pts.length; i++) {
+    if (Math.abs(pts[i].y - group[0].y) < 4) {
+      group.push(pts[i]);
+    } else {
+      lines.push(group.sort((a, b) => a.x - b.x).map(p => p.t).join(' ').trim());
+      group = [pts[i]];
+    }
+  }
+  lines.push(group.sort((a, b) => a.x - b.x).map(p => p.t).join(' ').trim());
+
+  return lines.filter(l => l.length > 0);
+}
+
+// ── HTML → text ─────────────────────────────────────────────────────────────
+function parseHTML(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = e => {
+      const doc  = new DOMParser().parseFromString(e.target.result, 'text/html');
+      const text = doc.body ? doc.body.innerText : e.target.result;
+      resolve(parseReport(text));
+    };
+    reader.onerror = () => reject(new Error('Could not read file.'));
+    reader.readAsText(file);
+  });
+}
+
+// ── Core parser ─────────────────────────────────────────────────────────────
+function parseReport(text) {
+  const d = {};
+
+  // KPIs
+  const totalM = text.match(/TOTAL MESSAGES\s+([\d.,]+\s*[KMBkmb]?)/);
+  d.totalMessages    = totalM ? compact2num(totalM[1]) : 0;
+  d.totalMessagesRaw = totalM ? totalM[1].trim() : '—';
+
+  const daysM = text.match(/ACTIVE DAYS\s+([\d,]+)/i);
+  d.activeDays = daysM ? parseInt(daysM[1].replace(/,/g, '')) : 0;
+
+  const totalDaysM = text.match(/of\s+([\d,]+)\s+days/i);
+  d.totalDays = totalDaysM ? parseInt(totalDaysM[1].replace(/,/g, '')) : 0;
+
+  const rateM = text.match(/\((\d+)%\)/);
+  d.activeRate = rateM ? parseInt(rateM[1]) : (d.totalDays ? Math.round(d.activeDays / d.totalDays * 100) : 0);
+
+  const peakM = text.match(/PEAK DAY\s+([\d.,]+\s*[KMBkmb]?)/);
+  d.peakMessages    = peakM ? compact2num(peakM[1]) : 0;
+  d.peakMessagesRaw = peakM ? peakM[1].trim() : '—';
+
+  const peakDateM = text.match(/PEAK DAY\s+[\d.,]+\s*[KMBkmb]?\s+((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^\n\r,]+\d{4})/i);
+  d.peakDate = peakDateM ? peakDateM[1].trim() : '';
+
+  const avgM = text.match(/AVG\s*[\/\\]\s*ACTIVE DAY\s+([\d.,]+\s*[KMBkmb]?)/i);
+  d.avgPerDay    = avgM ? compact2num(avgM[1]) : 0;
+  d.avgPerDayRaw = avgM ? avgM[1].trim() : '—';
+
+  // Period
+  const periodM = text.match(/Period:\s*([\d/]+)\s*[→>\-]+\s*([\d/]+)/);
+  d.periodStart = periodM ? periodM[1] : '';
+  d.periodEnd   = periodM ? periodM[2] : '';
+
+  const genM = text.match(/Generated:\s*([^\n\r]+)/);
+  d.generated = genM ? genM[1].trim() : '';
+
+  d.monthly  = parseMonthly(text);
+  d.peakDays = parsePeakDays(text);
+
+  return d;
+}
+
+function compact2num(s) {
+  if (!s) return 0;
+  s = s.toString().trim().replace(/,/g, '');
+  const m = s.match(/([\d.]+)\s*([KMBkmb]?)/);
+  if (!m) return parseFloat(s) || 0;
+  const n = parseFloat(m[1]);
+  const u = m[2].toUpperCase();
+  if (u === 'B') return n * 1e9;
+  if (u === 'M') return n * 1e6;
+  if (u === 'K') return n * 1e3;
+  return n;
+}
+
+// ── Monthly table parsing (two strategies) ──────────────────────────────────
+function parseMonthly(text) {
+  const abbr = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const months = [];
+
+  // Strategy 1 — same-line: "Jun 2025 157 0.0% —"
+  for (const line of lines) {
+    const m = line.match(
+      new RegExp(`^(${abbr})\\s+(\\d{4})\\s*\\*?\\s+([\\d,]+)\\s+([\\d.]+%)\\s+([—+\\-][^\\s]*)`, 'i')
+    );
+    if (m) {
+      months.push({ month: `${m[1]} ${m[2]}`, messages: int(m[3]), share: m[4], momChange: m[5] });
+    }
+  }
+  if (months.length) return months;
+
+  // Strategy 2 — multi-line: month on its own line, then value, share, mom on next lines
+  const monthRx = new RegExp(`^(${abbr})\\s+(\\d{4})\\s*\\*?$`, 'i');
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(monthRx);
+    if (!m) continue;
+    let j = i + 1, messages = 0, share = '', momChange = '';
+    if (j < lines.length && /^[\d,]+$/.test(lines[j]))   { messages   = int(lines[j]); j++; }
+    if (j < lines.length && /^\d+\.\d+%$/.test(lines[j])) { share      = lines[j];      j++; }
+    if (j < lines.length && /^[—+\-]/.test(lines[j]))    { momChange  = lines[j];      j++; }
+    if (messages || share) {
+      months.push({ month: `${m[1]} ${m[2]}`, messages, share, momChange });
+      i = j - 1;
+    }
+  }
+  return months;
+}
+
+// ── Peak days parsing (two strategies) ─────────────────────────────────────
+function parsePeakDays(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const days  = [];
+
+  // Strategy 1 — same-line: "1 12/05/2025 973,267 10.09%"
+  for (const line of lines) {
+    const m = line.match(/^(\d{1,2})\s+(\d{2}\/\d{2}\/\d{4})\s+([\d,]+)\s+([\d.]+%)/);
+    if (m) days.push({ rank: +m[1], date: m[2], messages: int(m[3]), pct: m[4] });
+  }
+  if (days.length) return days.sort((a, b) => a.rank - b.rank);
+
+  // Strategy 2 — multi-line
+  for (let i = 0; i < lines.length; i++) {
+    const rankM = lines[i].match(/^(\d{1,2})$/);
+    if (!rankM || +rankM[1] < 1 || +rankM[1] > 20) continue;
+    let j = i + 1, date = '', messages = 0, pct = '';
+    if (j < lines.length && /^\d{2}\/\d{2}\/\d{4}$/.test(lines[j])) { date     = lines[j]; j++; }
+    if (j < lines.length && /^[\d,]+$/.test(lines[j]))               { messages = int(lines[j]); j++; }
+    if (j < lines.length && /^[\d.]+%$/.test(lines[j]))              { pct      = lines[j]; j++; }
+    if (date && messages) { days.push({ rank: +rankM[1], date, messages, pct }); i = j - 1; }
+  }
+  return days.sort((a, b) => a.rank - b.rank);
+}
+
+function int(s) { return parseInt(String(s).replace(/,/g, '')) || 0; }
+
+// ── Render dashboard ────────────────────────────────────────────────────────
+function renderDashboard(data) {
+  const customer = document.getElementById('customer-name').value.trim() || 'Customer';
+
+  document.getElementById('dash-title-text').textContent = `${customer} — Usage Analysis`;
+  const parts = [
+    data.periodStart && data.periodEnd ? `${data.periodStart} → ${data.periodEnd}` : '',
+    data.generated ? `Generated ${data.generated}` : ''
+  ].filter(Boolean);
+  document.getElementById('dash-subtitle').textContent = parts.join('  ·  ');
+
+  // KPIs
+  document.getElementById('kpi-total').textContent = fmt(data.totalMessages);
+  document.getElementById('kpi-days').textContent  = data.activeDays || '—';
+  document.getElementById('kpi-days-sub').textContent =
+    data.totalDays ? `of ${data.totalDays} days (${data.activeRate}%)` : '—';
+  document.getElementById('kpi-peak').textContent = fmt(data.peakMessages);
+  document.getElementById('kpi-peak-date').textContent = data.peakDate || 'Single day record';
+  document.getElementById('kpi-avg').textContent  = fmt(data.avgPerDay);
+
+  renderChartMonthly(data.monthly);
+  renderChartMom(data.monthly);
+  renderInsights(data);
+  renderTableMonthly(data.monthly);
+  renderTablePeaks(data.peakDays);
+
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  window.scrollTo(0, 0);
+}
+
+// ── Charts ──────────────────────────────────────────────────────────────────
+function renderChartMonthly(monthly) {
+  const ctx    = document.getElementById('chart-monthly').getContext('2d');
+  const labels = monthly.map(m => m.month);
+  const values = monthly.map(m => m.messages);
+  const maxVal = Math.max(...values);
+
+  if (chartMonthly) chartMonthly.destroy();
+  chartMonthly = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: values.map(v => v === maxVal ? '#4F46E5' : '#A5B4FC'),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${fmtFull(ctx.parsed.y)} messages` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: {
+          grid: { color: '#F1F5F9' },
+          ticks: { callback: v => fmt(v, true), font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+function renderChartMom(monthly) {
+  const ctx       = document.getElementById('chart-mom').getContext('2d');
+  const withChange = monthly.filter(m => m.momChange && m.momChange !== '—');
+  const labels     = withChange.map(m => m.month);
+  const actuals    = withChange.map(m => m.momChange);
+  const values     = withChange.map(m => {
+    const raw = m.momChange.replace('%', '').replace(/,/g, '');
+    let v = parseFloat(raw) || 0;
+    if (/k/i.test(m.momChange)) v *= 1000;
+    return Math.max(-100, Math.min(800, v));
+  });
+
+  if (chartMom) chartMom.destroy();
+  chartMom = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: values.map(v => v >= 0 ? '#10B981' : '#EF4444'),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ` ${actuals[ctx.dataIndex]} MoM` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: {
+          grid: { color: '#F1F5F9' },
+          ticks: { callback: v => `${v > 0 ? '+' : ''}${v}%`, font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+// ── Insights ────────────────────────────────────────────────────────────────
+function renderInsights(data) {
+  const { monthly = [], activeDays, totalDays, peakDays = [] } = data;
+  const insights = [];
+
+  // Busiest month
+  const top = monthly.reduce((a, b) => a.messages > b.messages ? a : b, monthly[0]);
+  if (top) {
+    insights.push({ type: 'blue', title: 'Peak Month',
+      text: `<strong>${top.month}</strong> was the busiest period with <strong>${fmtFull(top.messages)}</strong> messages${top.share ? ' (' + top.share + ' of total)' : ''}.`
+    });
+  }
+
+  // Recent trend: last 3 vs prior 3
+  if (monthly.length >= 6) {
+    const recent = monthly.slice(-3).map(m => m.messages);
+    const prior  = monthly.slice(-6, -3).map(m => m.messages);
+    const ra = avg(recent), pa = avg(prior);
+    const pct = Math.round((ra - pa) / pa * 100);
+    const grow = ra > pa;
+    insights.push({ type: grow ? 'green' : 'yellow', title: 'Usage Trend',
+      text: grow
+        ? `Usage is <strong>growing</strong> — recent 3-month average is <strong>+${pct}%</strong> vs. the prior 3 months.`
+        : `Usage has <strong>declined</strong> — recent 3-month average is <strong>${pct}%</strong> vs. the prior 3 months.`
+    });
+  }
+
+  // Consistency
+  if (activeDays && totalDays) {
+    const rate = Math.round(activeDays / totalDays * 100);
+    insights.push({ type: rate >= 80 ? 'green' : rate >= 55 ? 'yellow' : 'red', title: 'Usage Consistency',
+      text: `Active <strong>${rate}%</strong> of tracked days (${activeDays} of ${totalDays}). ${rate >= 80 ? 'Strong daily engagement.' : rate >= 55 ? 'Some gaps in daily usage — could indicate batch or scheduled usage.' : 'Large gaps — usage appears event-driven rather than continuous.'}`
+    });
+  }
+
+  // Peak day concentration
+  if (peakDays.length) {
+    const d = peakDays[0];
+    insights.push({ type: 'violet', title: 'Traffic Concentration',
+      text: `The single busiest day (${fmtDate(d.date)}) drove <strong>${d.pct}</strong> of all-time traffic — <strong>${fmtFull(d.messages)}</strong> messages in one day.`
+    });
+  }
+
+  // Top 3 days combined
+  if (peakDays.length >= 3) {
+    const top3sum = peakDays.slice(0, 3).reduce((s, d) => s + d.messages, 0);
+    const top3pct = data.totalMessages ? (top3sum / data.totalMessages * 100).toFixed(1) : null;
+    if (top3pct) {
+      insights.push({ type: 'blue', title: 'Top-3 Day Share',
+        text: `The top 3 peak days combined for <strong>${fmtFull(top3sum)}</strong> messages — <strong>${top3pct}%</strong> of all traffic. High spikes may signal campaigns or batch workloads.`
+      });
+    }
+  }
+
+  document.getElementById('insights-grid').innerHTML = insights.map(ins => `
+    <div class="insight ${ins.type}">
+      <div class="insight-title">${ins.title}</div>
+      <div class="insight-text">${ins.text}</div>
+    </div>
+  `).join('');
+}
+
+// ── Tables ──────────────────────────────────────────────────────────────────
+function renderTableMonthly(monthly) {
+  document.getElementById('tbl-monthly').innerHTML = monthly.map(m => {
+    const bc = !m.momChange || m.momChange === '—' ? 'flat' : m.momChange.startsWith('+') ? 'up' : 'down';
+    return `<tr>
+      <td><strong>${m.month}</strong></td>
+      <td>${fmtFull(m.messages)}</td>
+      <td>${m.share || '—'}</td>
+      <td><span class="badge ${bc}">${m.momChange || '—'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTablePeaks(days) {
+  document.getElementById('tbl-peaks').innerHTML = days.map(d => `
+    <tr>
+      <td><span class="rank-badge${d.rank <= 3 ? ' top' : ''}">${d.rank}</span></td>
+      <td>${fmtDate(d.date)}</td>
+      <td>${fmtFull(d.messages)}</td>
+      <td>${d.pct}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Formatting helpers ───────────────────────────────────────────────────────
+function fmt(n, axis = false) {
+  if (!n && n !== 0) return '—';
+  if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
+  if (n >= 1e6) return `${+(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(axis ? 0 : 1)}K`;
+  return n.toLocaleString();
+}
+function fmtFull(n) {
+  if (!n && n !== 0) return '—';
+  return n.toLocaleString();
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  const p = s.split('/');
+  if (p.length !== 3) return s;
+  const mn = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mn[+p[0]] || p[0]} ${+p[1]}, ${p[2]}`;
+}
+function avg(arr) { return arr.reduce((a, b) => a + b, 0) / arr.length; }
+
+// ── UI helpers ───────────────────────────────────────────────────────────────
+function setLoading(show) {
+  document.getElementById('loading').style.display  = show ? 'block' : 'none';
+  document.getElementById('drop-zone').style.display = show ? 'none' : 'block';
+}
+function setError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent    = msg;
+  el.style.display  = msg ? 'block' : 'none';
+}
+function resetToUpload() {
+  document.getElementById('dashboard').style.display     = 'none';
+  document.getElementById('upload-section').style.display = 'flex';
+  document.getElementById('file-input').value = '';
+  setLoading(false);
+  setError('');
+}
+</script>
+</body>
+</html>

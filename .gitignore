@@ -1,1 +1,16 @@
+# Vercel
 .vercel
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Claude Code
+.claude
+
+# Editor
+.vscode/settings.json
+
+# Misc
+*.log
