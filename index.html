@@ -98,7 +98,7 @@
     .dash-header{background:linear-gradient(150deg,#0077C5 0%,#004f9e 100%);color:#fff;padding:1.125rem 2rem}
     .dash-header-inner{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem}
     .dash-brand{display:flex;align-items:center;gap:.625rem;margin-bottom:.2rem}
-    .dash-brand img{height:20px;filter:brightness(0) invert(1);opacity:.85}
+    .dash-brand img{height:34px;filter:brightness(0) invert(1);opacity:.9}
     .dash-brand-name{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.75}
     .dash-title h2{font-size:1.2rem;font-weight:700;line-height:1.2}
     .dash-title p{font-size:.72rem;opacity:.68;margin-top:.12rem}
@@ -418,6 +418,13 @@
 
     <!-- Charts row 1 -->
     <div class="section-label" id="vol-section-label">Usage Trends</div>
+
+    <!-- Daily consumption chart — shown when daily CSV loaded in breakdown mode -->
+    <div class="chart-card" id="daily-chart-card" style="display:none;margin-bottom:1.75rem">
+      <div class="card-title">Daily Consumption</div>
+      <div class="chart-wrap" style="height:220px"><canvas id="chart-daily"></canvas></div>
+    </div>
+
     <div class="charts-grid">
       <div class="chart-card">
         <div class="card-title">
@@ -634,7 +641,14 @@ function parsePeakDaysText(text) {
 // ── Spreadsheet / JSON parsers ───────────────────────────────────────────────
 async function parseSheet(file, delim) {
   setLoading(true, 'Parsing spreadsheet…');
-  const wb = XLSX.read(await file.text(), { type:'string', FS:delim });
+  const buf = await file.arrayBuffer();
+  const b = new Uint8Array(buf);
+  let text;
+  if (b[0]===0xFF && b[1]===0xFE)      text = new TextDecoder('utf-16le').decode(buf.slice(2));
+  else if (b[0]===0xFE && b[1]===0xFF) text = new TextDecoder('utf-16be').decode(buf.slice(2));
+  else if (b[0]===0xEF && b[1]===0xBB && b[2]===0xBF) text = new TextDecoder('utf-8').decode(buf.slice(3));
+  else text = new TextDecoder('utf-8').decode(buf);
+  const wb = XLSX.read(text, { type:'string', FS:delim });
   return sheetToData(wb.Sheets[wb.SheetNames[0]]);
 }
 async function parseExcel(file) {
@@ -664,6 +678,14 @@ function processTabular(rows) {
   const headers  = rows[0].map(h=>String(h??'').trim());
   const dataRows = rows.slice(1).filter(r=>r.some(c=>c!==''&&c!=null));
   const cols = detectCols(headers);
+  // Fallback: if no msgCol found (e.g. missing/blank column header), pick first numeric column
+  if (cols.msgCol<0 && dataRows.length>0) {
+    for (let i=0; i<headers.length; i++) {
+      if (i!==cols.dateCol && i!==cols.appCol && i!==cols.monthCol) {
+        if (numFromCell(dataRows[0][i])>0) { cols.msgCol=i; break; }
+      }
+    }
+  }
   if (cols.appCol>=0&&cols.msgCol>=0)    return processAppRows(dataRows, cols);
   if (cols.dateCol>=0&&cols.msgCol>=0)   return processDailyRows(dataRows, cols);
   if (cols.monthCol>=0&&cols.msgCol>=0)  return processMonthlyRows(dataRows, cols);
@@ -778,6 +800,7 @@ function processDailyRows(rows, cols) {
   const fd=parseDate_US(allDates[0]), ld=parseDate_US(allDates[allDates.length-1]);
   const totalDays=Math.max(1,Math.round((ld-fd)/864e5)+1);
   const peak=sortedDays[0]||{};
+  const dailyData=allDates.map(d=>({ date:d, messages:dailyMap[d] }));
   return {
     dataSource:'tabular', totalMessages, activeDays:allDates.length, totalDays,
     activeRate:Math.round(allDates.length/totalDays*100),
@@ -785,7 +808,7 @@ function processDailyRows(rows, cols) {
     avgPerDay:Math.round(totalMessages/allDates.length),
     periodStart:allDates[0]||'', periodEnd:allDates[allDates.length-1]||'',
     generated:new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}),
-    monthly, peakDays:sortedDays, apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
+    monthly, peakDays:sortedDays, dailyData, apps:[], totalApps:0, totalReplicas:0, totalFlows:0,
   };
 }
 
@@ -992,9 +1015,12 @@ function renderDashboard(data, fileType) {
   renderPlatformOverview(data, isAppMode);
 
   // Charts
+  const hasDailyData = isBreakdown && !isAppMode && data.dailyData?.length > 0;
+  document.getElementById('daily-chart-card').style.display = hasDailyData ? 'block' : 'none';
+  if (hasDailyData) renderChartDaily(data.dailyData);
   renderChartMonthly(data.monthly, isAppMode);
   renderChartDist(data.monthly, data.totalMessages, isAppMode);
-  if (hasTimeDim) {
+  if (hasTimeDim && isBreakdown) {
     renderChartMom(data.monthly);
     renderChartPeaks(data.peakDays, data.totalMessages);
   }
@@ -1136,6 +1162,31 @@ function renderChartDist(monthly, total, isAppMode) {
       plugins:{
         legend:{position:'bottom',labels:{boxWidth:9,font:{size:9},color:MUTED,padding:8}},
         tooltip:{callbacks:{label:c=>`${fmtFull(c.parsed)} (${(c.parsed/total*100).toFixed(1)}%)`}}
+      }
+    }
+  });
+}
+
+function renderChartDaily(dailyData) {
+  if (!dailyData?.length) return;
+  // Build month label for first day of each month
+  const labels = dailyData.map(d => {
+    const [mo,dy,yr] = d.date.split('/').map(Number);
+    return dy===1 ? new Date(yr,mo-1,1).toLocaleString('en-US',{month:"short",year:"2-digit"}) : '';
+  });
+  const vals = dailyData.map(d => d.messages);
+  const maxVal = Math.max(...vals);
+  mkChart('chart-daily', {
+    type:'bar',
+    data:{
+      labels: dailyData.map(d=>d.date),
+      datasets:[{ data:vals, backgroundColor:vals.map(v=>v===maxVal?BLUE:BLUE_L), borderRadius:2, borderSkipped:false }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:([c])=>c.label,label:c=>` ${fmtFull(c.parsed.y)} messages`}}},
+      scales:{
+        x:{grid:{display:false},ticks:{callback:(_v,i)=>labels[i],font:{size:9},color:MUTED,maxRotation:0}},
+        y:{grid:{color:'#F5F7FA'},ticks:{callback:v=>fmt(v,true),font:{size:9},color:MUTED}}
       }
     }
   });
