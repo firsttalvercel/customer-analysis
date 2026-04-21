@@ -937,11 +937,17 @@ function renderDashboard(data, fileType) {
 
   // Header
   document.getElementById('dash-customer').textContent = `${customer} — Usage Analysis`;
+
+  // Format period: MM/DD/YYYY → "Mon DD, YYYY"; month labels pass through as-is
+  const fmtPeriod = s => s && /^\d{2}\/\d{2}\/\d{4}$/.test(s.trim()) ? fmtDate(s.trim()) : s;
+  const periodStart = fmtPeriod(data.periodStart);
+  const periodEnd   = fmtPeriod(data.periodEnd);
+
   const subtitleParts = [
-    data.periodStart&&data.periodEnd ? `${data.periodStart} → ${data.periodEnd}` : '',
+    periodStart && periodEnd ? `${periodStart} → ${periodEnd}` : '',
     data.generated ? `Generated ${data.generated}` : '',
-    !isAppMode&&data.totalDays ? `${data.totalDays} days tracked` : '',
-    isAppMode&&data.totalApps ? `${data.totalApps} applications` : '',
+    !isAppMode && data.totalDays ? `${data.totalDays} days tracked` : '',
+    isAppMode && data.totalApps ? `${data.totalApps} applications` : '',
   ].filter(Boolean);
   document.getElementById('dash-subtitle').textContent = subtitleParts.join('  ·  ');
   document.getElementById('file-tag').textContent = fileType;
@@ -961,9 +967,15 @@ function renderDashboard(data, fileType) {
   document.getElementById('print-customer').textContent = customer;
   document.getElementById('print-date').textContent = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
 
-  // Exec summary
+  // Exec banner period — show data range, not dashboard generation date
+  const execPeriodParts = [
+    periodStart && periodEnd ? `${periodStart} → ${periodEnd}` : '',
+    !isAppMode && data.totalDays  ? `${data.totalDays} days` :
+    !isAppMode && data.monthly?.length ? `${data.monthly.length} months` : '',
+    isAppMode && data.totalApps ? `${data.totalApps} applications` : '',
+  ].filter(Boolean);
   document.getElementById('exec-customer').textContent = customer;
-  document.getElementById('exec-period').textContent   = subtitleParts.join('  ·  ');
+  document.getElementById('exec-period').textContent   = execPeriodParts.join('  ·  ');
   document.getElementById('exec-account').textContent  = accountId ? `Org ID: ${accountId}` : '';
 
   const score = calcHealthScore(data);
