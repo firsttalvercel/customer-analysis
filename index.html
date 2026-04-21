@@ -18,7 +18,7 @@
       --purple:#7C3AED; --purple-bg:#F5F3FF;
     }
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{font-size:14px}
+    html{font-size:16px}
     body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
 
     /* ══ UPLOAD PAGE ══════════════════════════════════════════ */
@@ -127,6 +127,18 @@
     .mode-pill{display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .875rem;border-radius:99px;font-size:.72rem;font-weight:700}
     .mode-pill.time{background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0}
     .mode-pill.app{background:var(--blue-light);color:var(--blue-dark);border:1px solid #93C5FD}
+    .mode-pill.overview{background:#F5F3FF;color:#5B21B6;border:1px solid #C4B5FD}
+
+    /* Analysis type selector */
+    .analysis-select{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1.125rem}
+    .analysis-select-label{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);margin-bottom:.5rem}
+    .analysis-opt{padding:.75rem .875rem;border:2px solid var(--border);border-radius:.75rem;cursor:pointer;transition:all .18s;text-align:center;background:#fff;user-select:none}
+    .analysis-opt:hover{border-color:#93C5FD;background:var(--blue-faint)}
+    .analysis-opt.active{border-color:var(--blue);background:var(--blue-light)}
+    .analysis-opt-icon{font-size:1.4rem;margin-bottom:.25rem}
+    .analysis-opt-label{font-size:.85rem;font-weight:700;color:var(--text);margin-bottom:.15rem}
+    .analysis-opt.active .analysis-opt-label{color:var(--blue)}
+    .analysis-opt-desc{font-size:.72rem;color:var(--muted);line-height:1.35}
 
     .dash-body{max-width:1280px;margin:0 auto;padding:1.75rem 2rem}
 
@@ -347,6 +359,22 @@
         <input class="field-input" type="text" id="account-id" placeholder="e.g. a0B3x00000xyz" />
       </div>
 
+      <div style="margin-bottom:1rem">
+        <div class="analysis-select-label">Analysis Type</div>
+        <div class="analysis-select">
+          <div class="analysis-opt active" id="mode-overview" onclick="selectMode('overview')">
+            <div class="analysis-opt-icon">📊</div>
+            <div class="analysis-opt-label">Overview</div>
+            <div class="analysis-opt-desc">Executive snapshot &amp; platform summary</div>
+          </div>
+          <div class="analysis-opt" id="mode-breakdown" onclick="selectMode('breakdown')">
+            <div class="analysis-opt-icon">📈</div>
+            <div class="analysis-opt-label">Month-over-Month</div>
+            <div class="analysis-opt-desc">Trend &amp; growth analysis</div>
+          </div>
+        </div>
+      </div>
+
       <div class="drop-zone" id="drop-zone">
         <div class="dz-icon">📂</div>
         <h3>Drop your file here</h3>
@@ -514,6 +542,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 let charts = {};
+let selectedMode = 'overview';
+function selectMode(mode) {
+  selectedMode = mode;
+  document.getElementById('mode-overview').classList.toggle('active', mode === 'overview');
+  document.getElementById('mode-breakdown').classList.toggle('active', mode === 'breakdown');
+}
 
 // ── Upload wiring ────────────────────────────────────────────────────────────
 const dropZone = document.getElementById('drop-zone');
@@ -893,14 +927,14 @@ function renderDashboard(data, fileType) {
   document.getElementById('file-tag').textContent = fileType;
 
   // Mode pill
+  const isBreakdown = selectedMode === 'breakdown';
   const pill = document.getElementById('mode-pill');
   if (isAppMode) {
-    pill.className='mode-pill app'; pill.textContent='🏗️  App Overview — showing platform footprint & volume by application';
+    pill.className='mode-pill app'; pill.textContent='🏗️  App Overview — platform footprint & volume by application';
+  } else if (isBreakdown) {
+    pill.className='mode-pill time'; pill.textContent='📈  Month-over-Month — trend & growth analysis over time';
   } else {
-    pill.className='mode-pill time';
-    pill.textContent = hasPeaks
-      ? '📅  Time Series — showing monthly trends, peak days & MoM analysis'
-      : '📅  Time Series — monthly breakdown (no daily detail available in this file)';
+    pill.className='mode-pill overview'; pill.textContent='📊  Overview — executive snapshot & platform summary';
   }
 
   // Print footer
@@ -950,10 +984,11 @@ function renderDashboard(data, fileType) {
       <div class="exec-stat-sub">${s.sub}</div>
     </div>`).join('');
 
-  // Show/hide time-series-only sections
-  document.getElementById('charts-row2').style.display     = hasTimeDim ? 'grid' : 'none';
-  document.getElementById('peaks-table-card').style.display = (hasTimeDim&&hasPeaks) ? 'block' : 'none';
+  // Show/hide sections based on mode and data type
+  document.getElementById('charts-row2').style.display      = (hasTimeDim && isBreakdown) ? 'grid' : 'none';
+  document.getElementById('peaks-table-card').style.display = (hasTimeDim && hasPeaks && isBreakdown) ? 'block' : 'none';
   document.getElementById('app-table-card').style.display   = isAppMode ? 'block' : 'none';
+  document.getElementById('platform-section').style.display = (!isBreakdown || isAppMode) ? 'block' : 'none';
 
   // Section labels & chart titles adapt
   document.getElementById('vol-section-label').textContent = isAppMode ? 'Volume by Application' : 'Usage Trends';
@@ -963,9 +998,12 @@ function renderDashboard(data, fileType) {
   document.getElementById('kpi-section-label').textContent   = isAppMode ? 'Platform Metrics' : 'Core Metrics';
 
   // Breakdown table header adapts
+  const showMoMCols = !isAppMode && isBreakdown;
   document.getElementById('breakdown-table-head').innerHTML = isAppMode
-    ? '<tr><th>Application</th><th>Volume</th><th>Share of Total</th><th></th><th></th></tr>'
-    : '<tr><th>Month</th><th>Messages</th><th>Share of Total</th><th>MoM Change</th><th>Trend</th></tr>';
+    ? '<tr><th>Application</th><th>Volume</th><th>Share of Total</th></tr>'
+    : showMoMCols
+      ? '<tr><th>Month</th><th>Messages</th><th>Share of Total</th><th>MoM Change</th><th>Trend</th></tr>'
+      : '<tr><th>Month</th><th>Messages</th><th>Share of Total</th></tr>';
 
   // KPIs
   renderKPIs(data, isAppMode);
@@ -1010,20 +1048,34 @@ function renderKPIs(data, isAppMode) {
   } else {
     const monthly = data.monthly||[];
     const peakMonth = monthly.reduce((a,b)=>a.messages>b.messages?a:b, monthly[0]);
-    cards = [
-      { icon:'💬', label:'Total Messages',  val:fmt(data.totalMessages),                  sub:'All-time cumulative' },
-      data.activeDays
-        ? { icon:'📅', label:'Active Days',  val:data.activeDays,                          sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'Days with activity' }
-        : { icon:'📆', label:'Months of Data', val:monthly.length,                        sub:'Calendar months tracked' },
-      data.peakMessages&&data.peakDate
-        ? { icon:'🔥', label:'Peak Day',    val:fmt(data.peakMessages),                   sub:data.peakDate }
-        : { icon:'🏆', label:'Peak Month',  val:peakMonth?.month||'—',                   sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
-      data.avgPerDay
-        ? { icon:'📈', label:'Avg / Active Day', val:fmt(data.avgPerDay),                 sub:'Messages per active day' }
-        : { icon:'📊', label:'Avg / Month',      val:fmt(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
-      { icon:'📆', label:'Months of Data',  val:monthly.length||'—',                      sub:'Calendar months tracked' },
-      { icon:'🏆', label:'Peak Month',      val:peakMonth?.month||'—',                    sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
-    ];
+    const cmgrVal = calcCMGR(monthly);
+    if (selectedMode === 'breakdown') {
+      cards = [
+        { icon:'💬', label:'Total Messages', val:fmt(data.totalMessages), sub:'All-time cumulative' },
+        data.activeDays
+          ? { icon:'📅', label:'Active Days', val:data.activeDays, sub:data.totalDays?`of ${data.totalDays} days (${data.activeRate}%)`:'Days with activity' }
+          : { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months tracked' },
+        data.peakMessages&&data.peakDate
+          ? { icon:'🔥', label:'Peak Day', val:fmt(data.peakMessages), sub:data.peakDate }
+          : { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
+        data.avgPerDay
+          ? { icon:'📈', label:'Avg / Active Day', val:fmt(data.avgPerDay), sub:'Messages per active day' }
+          : { icon:'📊', label:'Avg / Month', val:fmt(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
+        cmgrVal !== null
+          ? { icon:'📉', label:'Monthly Growth (CMGR)', val:`${+cmgrVal>=0?'+':''}${cmgrVal}%`, sub:'Compound monthly growth' }
+          : { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months tracked' },
+        { icon:'🏔️', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
+      ].filter(Boolean);
+    } else {
+      cards = [
+        { icon:'💬', label:'Total Messages', val:fmt(data.totalMessages), sub:'All-time cumulative' },
+        { icon:'📆', label:'Months of Data', val:monthly.length||'—', sub:'Calendar months in report' },
+        { icon:'🏆', label:'Peak Month', val:peakMonth?.month||'—', sub:peakMonth?fmtFull(peakMonth.messages)+' messages':'' },
+        { icon:'📊', label:'Avg / Month', val:fmt(Math.round(data.totalMessages/Math.max(1,monthly.length))), sub:'Average monthly volume' },
+        data.totalApps>0 ? { icon:'📦', label:'Applications', val:data.totalApps, sub:'Deployed Mule apps' } : null,
+        data.totalFlows>0 ? { icon:'🔀', label:'Total Flows', val:fmtFull(data.totalFlows), sub:'Integration flows' } : null,
+      ].filter(Boolean);
+    }
   }
   document.getElementById('kpi-grid').innerHTML = cards.map(c=>`
     <div class="kpi-card">
@@ -1179,9 +1231,10 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
       text:`On average, each application processes <strong>${fmt(volPerApp)}</strong> messages. Applications significantly above this average may be candidates for scaling or refactoring.`
     });
   } else {
+    const isBreakdownMode = selectedMode === 'breakdown';
     // Time-series insights
     const topM=monthly.reduce((a,b)=>a.messages>b.messages?a:b,monthly[0]);
-    if (topM) ins.push({type:'blue',title:'Busiest Period',
+    if (topM) ins.push({type:'blue',title:isBreakdownMode?'Busiest Period':'Peak Month',
       text:`<strong>${topM.month}</strong> was the highest-traffic month with <strong>${fmtFull(topM.messages)}</strong> messages${topM.share?` (${topM.share} of total)`:''}. Understanding what drove this spike can inform capacity planning.`
     });
 
@@ -1196,32 +1249,48 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
       });
     }
 
-    if (cmgr!==null) ins.push({type:+cmgr>=0?'green':'yellow',title:'Compound Monthly Growth',
-      text:`CMGR over the full period is <strong>${cmgr>=0?'+':''}${cmgr}%</strong>/month. ${+cmgr>=10?'Strong organic growth trajectory.':+cmgr>0?'Steady positive trend.':'Declining trend — explore expansion opportunities with the customer.'}`
-    });
+    if (isBreakdownMode) {
+      if (cmgr!==null) ins.push({type:+cmgr>=0?'green':'yellow',title:'Compound Monthly Growth',
+        text:`CMGR over the full period is <strong>${cmgr>=0?'+':''}${cmgr}%</strong>/month. ${+cmgr>=10?'Strong organic growth trajectory.':+cmgr>0?'Steady positive trend.':'Declining trend — explore expansion opportunities with the customer.'}`
+      });
 
-    if (projected) ins.push({type:'teal',title:'Next Month Projection',
-      text:`Based on the recent trajectory, next month is estimated at <strong>${fmt(projected)}</strong> messages. ${projected>topM.messages?'This would set a new monthly record — ensure capacity is adequate.':'Still below the peak of '+fmtFull(topM.messages)+' ('+topM.month+').'}`
-    });
+      if (projected) ins.push({type:'teal',title:'Next Month Projection',
+        text:`Based on the recent trajectory, next month is estimated at <strong>${fmt(projected)}</strong> messages. ${projected>topM.messages?'This would set a new monthly record — ensure capacity is adequate.':'Still below the peak of '+fmtFull(topM.messages)+' ('+topM.month+').'}`
+      });
 
-    if (activeDays&&totalDays) {
-      const rate=Math.round(activeDays/totalDays*100);
-      ins.push({type:rate>=80?'green':rate>=55?'yellow':'red',title:'Usage Consistency',
-        text:`Active on <strong>${rate}%</strong> of tracked days (${activeDays} of ${totalDays}). ${rate>=85?'Excellent daily engagement — the platform is deeply embedded in operations.':rate>=65?'Some gaps in daily usage — may indicate batch or scheduled workloads.':'Significant inactive periods. Usage appears event-driven or seasonal — worth exploring.'}`
+      if (activeDays&&totalDays) {
+        const rate=Math.round(activeDays/totalDays*100);
+        ins.push({type:rate>=80?'green':rate>=55?'yellow':'red',title:'Usage Consistency',
+          text:`Active on <strong>${rate}%</strong> of tracked days (${activeDays} of ${totalDays}). ${rate>=85?'Excellent daily engagement — the platform is deeply embedded in operations.':rate>=65?'Some gaps in daily usage — may indicate batch or scheduled workloads.':'Significant inactive periods. Usage appears event-driven or seasonal — worth exploring.'}`
+        });
+      }
+
+      if (peakDays.length&&totalMessages) {
+        const d1=peakDays[0], topPct=(d1.messages/totalMessages*100).toFixed(1);
+        ins.push({type:+topPct>12?'yellow':'blue',title:'Peak Day Concentration',
+          text:`${fmtDate(d1.date)} drove <strong>${d1.pct}</strong> of all-time traffic (<strong>${fmtFull(d1.messages)}</strong> messages). ${+topPct>15?'High single-day concentration suggests campaigns or batch jobs — review scaling policies.':'Peak traffic is well distributed relative to total volume.'}`
+        });
+      }
+
+      const anomalies=detectAnomalies(monthly);
+      if (anomalies.length) ins.push({type:'yellow',title:'Anomalous Months',
+        text:`${anomalies.length} month${anomalies.length>1?'s deviate':'deviates'} significantly from the trend: <strong>${anomalies.map(a=>a.month).join(', ')}</strong>. These may reflect go-lives, campaigns, or pipeline events — good talking points with the customer.`
+      });
+    } else {
+      // Overview mode — add volume range & distribution insights
+      if (monthly.length>=2) {
+        const sorted=[...monthly].sort((a,b)=>b.messages-a.messages);
+        const top3sum=sorted.slice(0,3).reduce((s,m)=>s+m.messages,0);
+        const top3pct=(top3sum/totalMessages*100).toFixed(1);
+        ins.push({type:'teal',title:'Traffic Concentration',
+          text:`Top 3 months account for <strong>${top3pct}%</strong> of total volume. ${+top3pct>60?'Usage is concentrated in a few peak months — may indicate seasonal workloads.':'Volume is reasonably spread across the period.'}`
+        });
+      }
+      const anomalies=detectAnomalies(monthly);
+      if (anomalies.length) ins.push({type:'yellow',title:'Notable Months',
+        text:`${anomalies.length} month${anomalies.length>1?'s stand':'stands'} out significantly: <strong>${anomalies.map(a=>a.month).join(', ')}</strong>. These may reflect go-lives, campaigns, or key business events.`
       });
     }
-
-    if (peakDays.length&&totalMessages) {
-      const d1=peakDays[0], topPct=(d1.messages/totalMessages*100).toFixed(1);
-      ins.push({type:+topPct>12?'yellow':'blue',title:'Peak Day Concentration',
-        text:`${fmtDate(d1.date)} drove <strong>${d1.pct}</strong> of all-time traffic (<strong>${fmtFull(d1.messages)}</strong> messages). ${+topPct>15?'High single-day concentration suggests campaigns or batch jobs — review scaling policies.':'Peak traffic is well distributed relative to total volume.'}`
-      });
-    }
-
-    const anomalies=detectAnomalies(monthly);
-    if (anomalies.length) ins.push({type:'yellow',title:'Anomalous Months',
-      text:`${anomalies.length} month${anomalies.length>1?'s deviate':'deviates'} significantly from the trend: <strong>${anomalies.map(a=>a.month).join(', ')}</strong>. These may reflect go-lives, campaigns, or pipeline events — good talking points with the customer.`
-    });
   }
 
   document.getElementById('insights-grid').innerHTML = ins.map(i=>`
@@ -1234,10 +1303,11 @@ function renderInsights(data, isAppMode, customer, cmgr, projected) {
 // ── Tables ────────────────────────────────────────────────────────────────────
 function renderTableBreakdown(monthly, total, isAppMode) {
   const maxMsg=Math.max(...monthly.map(m=>m.messages));
+  const showMoM = !isAppMode && selectedMode === 'breakdown';
   document.getElementById('tbl-monthly').innerHTML = monthly.map((m,i)=>{
     const bc=!m.momChange||m.momChange==='—'?'flat':m.momChange.startsWith('+')?'up':'down';
-    const trendIcon=isAppMode?'':i===0?'—':m.messages>monthly[i-1].messages?'↑':'↓';
-    const trendColor=i===0||isAppMode?MUTED:m.messages>monthly[i-1].messages?GREEN:RED;
+    const trendIcon=i===0?'—':m.messages>monthly[i-1].messages?'↑':'↓';
+    const trendColor=i===0?MUTED:m.messages>monthly[i-1].messages?GREEN:RED;
     return `<tr>
       <td><strong>${m.month}</strong></td>
       <td>${fmtFull(m.messages)}</td>
@@ -1247,8 +1317,7 @@ function renderTableBreakdown(monthly, total, isAppMode) {
           <span class="share-pct">${m.share||'—'}</span>
         </div>
       </td>
-      <td>${isAppMode?'':` <span class="badge ${bc}">${m.momChange||'—'}</span>`}</td>
-      <td style="color:${trendColor};font-weight:700;font-size:.95rem">${trendIcon}</td>
+      ${showMoM?`<td><span class="badge ${bc}">${m.momChange||'—'}</span></td><td style="color:${trendColor};font-weight:700;font-size:.95rem">${trendIcon}</td>`:''}
     </tr>`;
   }).join('');
 }
