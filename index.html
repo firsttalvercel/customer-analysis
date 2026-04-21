@@ -497,6 +497,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 let charts = {};
 let selectedMode = 'overview';
+
+// Clear all report data when the user navigates away or closes the tab
+window.addEventListener('pagehide',    () => clearAllData());
+window.addEventListener('beforeunload',() => clearAllData());
 function selectMode(mode) {
   selectedMode = mode;
   document.getElementById('mode-overview').classList.toggle('active', mode === 'overview');
@@ -514,6 +518,7 @@ fileInput.addEventListener('change', e => { if (e.target.files[0]) processFile(e
 // ── Entry point ──────────────────────────────────────────────────────────────
 async function processFile(file) {
   const ext = file.name.split('.').pop().toLowerCase();
+  clearAllData();   // wipe any previous report data before parsing new file
   setLoading(true, 'Analyzing report…');
   setError('');
   try {
@@ -1407,7 +1412,37 @@ function fmtFull(n){return(!n&&n!==0)?'—':Number(n).toLocaleString();}
 function fmtDate(s){if(!s)return '—';const p=String(s).split('/');if(p.length!==3)return s;const mn=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return `${mn[+p[0]]||p[0]} ${+p[1]}, ${p[2]}`;}
 function setLoading(show,msg='Analyzing…'){document.getElementById('loading').style.display=show?'block':'none';document.getElementById('drop-zone').style.display=show?'none':'block';document.getElementById('loading-msg').textContent=msg;}
 function setError(msg){const el=document.getElementById('error-msg');el.textContent=msg;el.style.display=msg?'block':'none';}
-function resetToUpload(){document.getElementById('dashboard').style.display='none';document.getElementById('upload-section').style.display='flex';document.getElementById('file-input').value='';setLoading(false);setError('');}
+function clearAllData() {
+  // Destroy every Chart.js instance and release its memory
+  Object.keys(charts).forEach(id => { try { charts[id].destroy(); } catch(_){} });
+  charts = {};
+
+  // Wipe all rendered data from the DOM so nothing lingers in page memory
+  const wipe = id => { const el=document.getElementById(id); if(el) el.innerHTML=''; };
+  wipe('exec-stats'); wipe('kpi-grid'); wipe('platform-grid'); wipe('insights-grid');
+  wipe('tbl-monthly'); wipe('tbl-apps'); wipe('tbl-peaks'); wipe('breakdown-table-head');
+  const dailyCtx = document.getElementById('chart-daily');
+  if (dailyCtx) dailyCtx.replaceWith(dailyCtx.cloneNode(false));
+  const peaksWrap = document.getElementById('chart-peaks-wrap');
+  if (peaksWrap) peaksWrap.innerHTML = '<canvas id="chart-peaks"></canvas>';
+
+  // Clear score ring
+  const arc = document.getElementById('score-arc');
+  if (arc) { arc.style.strokeDashoffset='207'; arc.style.stroke='rgba(255,255,255,.2)'; }
+  const sv = document.getElementById('score-val'); if(sv) sv.textContent='—';
+
+  // Clear file input so the same file can be re-uploaded and to drop the blob reference
+  const fi = document.getElementById('file-input');
+  if (fi) { fi.value = ''; fi.type='text'; fi.type='file'; }
+}
+
+function resetToUpload() {
+  clearAllData();
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('upload-section').style.display = 'flex';
+  setLoading(false);
+  setError('');
+}
 </script>
 </body>
 </html>
