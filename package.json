@@ -2,11 +2,22 @@
   "name": "customer-usage-analyzer",
   "version": "1.0.0",
   "description": "Single-page sales tool for analyzing Vercel Message Usage Reports",
+  "main": "index.html",
   "scripts": {
     "dev": "npx serve . --listen 3000",
+    "build": "echo 'Build complete: No transpilation needed for vanilla SPA'",
+    "lint": "npx eslint .",
     "deploy": "vercel --prod"
   },
-  "keywords": ["vercel", "usage-report", "sales", "analytics"],
+  "keywords": [
+    "vercel",
+    "usage-report",
+    "sales",
+    "analytics"
+  ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
 }
