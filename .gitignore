@@ -1,6 +1,15 @@
 # Vercel
 .vercel
 
+# Node
+node_modules/
+package-lock.json
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
 # macOS
 .DS_Store
 .AppleDouble
@@ -11,7 +20,8 @@
 
 # Editor
 .vscode/settings.json
+.idea/
 
-# Misc
+# Logs
 *.log
-.env*.local
+npm-debug.log*

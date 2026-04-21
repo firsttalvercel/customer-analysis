@@ -1,19 +1,22 @@
 {
   "name": "customer-usage-analyzer",
-  "version": "1.0.0",
-  "description": "Single-page sales tool for analyzing Vercel Message Usage Reports",
+  "version": "2.0.0",
+  "description": "MuleSoft sales tool — parses customer usage reports into interactive dashboards. Runs entirely in the browser, no backend required.",
   "main": "index.html",
   "scripts": {
     "dev": "npx serve . --listen 3000",
-    "build": "echo 'Build complete: No transpilation needed for vanilla SPA'",
+    "build": "echo 'No build step needed — vanilla HTML/CSS/JS single-file app'",
     "lint": "npx eslint .",
     "deploy": "vercel --prod"
   },
   "keywords": [
-    "vercel",
+    "mulesoft",
+    "anypoint",
     "usage-report",
-    "sales",
-    "analytics"
+    "sales-tool",
+    "analytics",
+    "customer-analysis",
+    "vercel"
   ],
   "author": "",
   "license": "ISC",

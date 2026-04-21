@@ -1,79 +1,140 @@
-# Customer Usage Analyzer
+# Customer Usage Analyzer — MuleSoft
 
-A single-page sales tool that parses Vercel Message Usage Reports and turns them into visual dashboards — no backend, no login, no data leaves the browser.
+A single-page internal sales tool that parses MuleSoft customer reports and turns them into a professional, interactive analytics dashboard — all in the browser, with no data ever leaving the device.
+
+---
 
 ## What it does
 
-Drop a customer's **PDF or HTML** Message Usage Report onto the page and instantly get:
+Drop any supported MuleSoft report file onto the page and instantly get a tailored dashboard with two analysis modes:
 
-- **KPI summary** — Total messages, active days, peak day, and daily average
-- **Monthly volume chart** — bar chart with the busiest month highlighted
-- **Month-over-Month change chart** — green/red bars showing growth and decline
-- **Auto-generated insights** — peak month, usage trend, consistency score, traffic concentration
-- **Monthly breakdown table** — with color-coded MoM badges
-- **Top peak days table** — ranked list of the highest-traffic days
+### 📊 Overview Mode
+Best for **Running Applications CSVs** — shows a platform-level snapshot:
+- Total messages, applications, vCores, workers, and flow counts
+- Volume by application (bar chart + donut distribution)
+- Per-app details: environment, workers, vCores, avg daily flows, avg monthly messages, total messages, share
+- Platform insights: top app, traffic concentration, infrastructure footprint, complexity
 
-## Usage
+### 📈 Month-over-Month Breakdown Mode
+Best for **Message Usage PDFs and time-series CSVs** — shows usage trends over time:
+- Daily Consumption chart (every individual day, Anypoint-style)
+- Monthly Message Volume chart with rolling trend line
+- Month-over-Month Change chart (green/red bars)
+- Top Peak Days chart and ranked table
+- Monthly breakdown table with MoM badges
+- Trend insights: CMGR, 3-month trajectory, projection, usage consistency, anomaly detection
 
-### Option 1 — Open locally
+### Shared across both modes
+- Executive summary with health score ring (0–100)
+- KPI summary cards
+- Auto-generated insights
+- One-click PDF download via browser print (`@media print` optimised for A4)
+- Privacy-first: all data is wiped from memory on reset, new file load, or page close
 
+---
+
+## Quick start
+
+### Option 1 — Open directly (no server needed)
 ```bash
 open index.html
 ```
 
-No server needed. Works directly from the file system.
-
-### Option 2 — Run with a local dev server
-
+### Option 2 — Local dev server
 ```bash
-npx serve .
+npm run dev
+# → http://localhost:3000
 ```
 
-Then open [http://localhost:3000](http://localhost:3000).
-
-### Option 3 — Deployed on Vercel
-
-The site is linked to Vercel. To deploy:
-
+### Option 3 — Deploy to Vercel
 ```bash
 vercel --prod
 ```
+
+---
 
 ## Supported file formats
 
 | Format | Notes |
 |--------|-------|
-| `.pdf` | Parsed in-browser via PDF.js — no upload to any server |
-| `.html` | The raw HTML export from the usage report generator |
+| `.csv` / `.tsv` | Auto-detects tab vs comma delimiter; handles UTF-16 LE/BE BOM (Anypoint exports) |
+| `.xlsx` / `.xls` | Full Excel support via SheetJS |
+| `.pdf` | Client-side extraction via PDF.js — Anypoint Message Usage Report format |
+| `.html` | Raw HTML export from the Anypoint usage report generator |
+| `.json` | Array of records or `{ monthly: [...] }` object |
 
-Both formats of the same report work. The parser uses two strategies (same-line and multi-line) and falls back automatically.
+**Missing column headers** are handled automatically — if the second column has no header (common in Anypoint CSV exports) the parser finds the first numeric column positionally.
 
-## Generated insights
+---
 
-| Insight | Description |
-|---------|-------------|
-| Peak Month | The single busiest calendar month |
-| Usage Trend | Recent 3-month avg vs. prior 3-month avg |
-| Usage Consistency | % of tracked days with activity |
-| Traffic Concentration | What % of all traffic the top day drove |
-| Top-3 Day Share | Combined share of the three busiest days |
+## Supported report types
+
+### Running Applications Report (CSV)
+Exported from Anypoint Platform. Expected columns (detected automatically, order doesn't matter):
+
+| Column | Description |
+|--------|-------------|
+| `APPLICATION_NAME` | App identifier |
+| `ENVIRONMENT_TYPE` | `production` or `sandbox` |
+| `TOTAL_ACTIVE_VCORES` | vCores allocated |
+| `WORKER_COUNT` | Worker instances |
+| `AVG_DAILY_FLOW_COUNT` | Average flows triggered per day |
+| `AVG_MONTHLY_MESSAGES` | Average monthly message volume |
+| `TOTAL_MESSAGES_OVER_MONTHS_OF_DATA` | Total messages (used for ranking) |
+| `MONTHS_OF_DATA` | Data window in months |
+
+### Message Usage Report (PDF or HTML)
+Standard Anypoint platform export. The parser extracts:
+- KPI header (Total Messages, Active Days, Peak Day, Avg/Active Day)
+- Monthly breakdown table (month, messages, share, MoM change)
+- Top 10 Peak Days table
+
+### Daily / Monthly CSV
+Any two-column file with dates and message counts. Dates in any common format (`M/D/YYYY`, `YYYY-MM-DD`, etc.).
+
+---
+
+## Privacy & data handling
+
+All file processing happens **entirely in the browser**. No customer data is transmitted to any server at any point.
+
+In addition, the app actively clears data from memory:
+
+| Trigger | What is cleared |
+|---------|-----------------|
+| "+ New Report" button | All chart instances, DOM tables, KPI cards, file input blob |
+| Loading a new file | Previous report data wiped before new file is parsed |
+| Tab close / navigate away | `pagehide` + `beforeunload` listeners clear all in-memory data |
+
+---
 
 ## Tech stack
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| [PDF.js](https://mozilla.github.io/pdf.js/) | 3.11 | Client-side PDF text extraction |
-| [Chart.js](https://www.chartjs.org/) | 4.4 | Bar charts |
+| [PDF.js](https://mozilla.github.io/pdf.js/) | 3.11.174 | Client-side PDF text extraction |
+| [Chart.js](https://www.chartjs.org/) | 4.4.0 | Bar, line, and doughnut charts |
+| [SheetJS / xlsx](https://sheetjs.com/) | 0.18.5 | CSV, TSV, Excel parsing |
 
-Everything else is vanilla HTML, CSS, and JavaScript — no build step, no dependencies to install.
+Everything else is vanilla HTML, CSS, and JavaScript — no build step, no framework, no dependencies to install.
+
+---
 
 ## Project structure
 
 ```
-index.html     — entire application (single file)
-package.json   — project metadata
+index.html        — entire application (HTML + CSS + JS, single file)
+package.json      — project metadata and dev scripts
+.gitignore        — excludes node_modules, .vercel, .env, secrets
+README.md         — this file
 ```
 
-## Privacy
+---
 
-All file processing happens entirely in the browser. No customer data is sent to any server.
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start local server on port 3000 (`npx serve .`) |
+| `npm run build` | No-op (no transpilation needed) |
+| `npm run deploy` | Deploy to Vercel production |
