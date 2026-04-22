@@ -512,15 +512,14 @@
           <option value="">Any Workers</option>
           <option value="eq1">= 1  (No HA)</option>
           <option value="gte2">≥ 2  (HA)</option>
-          <option value="gte4">≥ 4</option>
+          <option value="gte3">≥ 3</option>
         </select>
         <select id="filter-vcores"  class="filter-select">
           <option value="">Any vCores</option>
-          <option value="lt1">&lt; 1</option>
-          <option value="eq1">= 1</option>
-          <option value="gt1">&gt; 1</option>
-          <option value="gte2">≥ 2</option>
-          <option value="gte4">≥ 4</option>
+          <option value="lte01">≤ 0.1</option>
+          <option value="01to05">0.1 – 0.5</option>
+          <option value="05to1">0.5 – 1.0</option>
+          <option value="gt1">&gt; 1.0</option>
         </select>
         <button class="filter-reset-btn" onclick="resetAppFilters()">✕ Clear filters</button>
       </div>
@@ -1459,16 +1458,15 @@ function applyAppFilters() {
       if (w == null)            return false;
       if (workers==='eq1'  && w !== 1) return false;
       if (workers==='gte2' && w  < 2)  return false;
-      if (workers==='gte4' && w  < 4)  return false;
+      if (workers==='gte3' && w  < 3)  return false;
     }
     if (vcores) {
       const v = a.vcores;
       if (v == null)            return false;
-      if (vcores==='lt1'  && v >=  1) return false;
-      if (vcores==='eq1'  && v !==  1) return false;
-      if (vcores==='gt1'  && v <=  1) return false;
-      if (vcores==='gte2' && v  <  2)  return false;
-      if (vcores==='gte4' && v  <  4)  return false;
+      if (vcores==='lte01'  &&  v >  0.1)               return false;
+      if (vcores==='01to05' && (v <= 0.1 || v >  0.5)) return false;
+      if (vcores==='05to1'  && (v <= 0.5 || v >  1.0)) return false;
+      if (vcores==='gt1'    &&  v <= 1.0)               return false;
     }
     return true;
   });
@@ -1544,10 +1542,6 @@ function clearAllData() {
   const peaksWrap = document.getElementById('chart-peaks-wrap');
   if (peaksWrap) peaksWrap.innerHTML = '<canvas id="chart-peaks"></canvas>';
 
-  // Reset app filter bar state
-  _appsData = []; _appsTotal = 0;
-  resetAppFilters();
-
   // Clear file input so the same file can be re-uploaded and to drop the blob reference
   const fi = document.getElementById('file-input');
   if (fi) { fi.value = ''; fi.type='text'; fi.type='file'; }
@@ -1560,11 +1554,12 @@ function renderCTA(data, isAppMode) {
   const signals  = [];
   const mll      = (data.metricLabel || 'Messages').toLowerCase();
 
-  // Helper: CMGR already available via calcCMGR but we need it locally
-  const cmgr = calcCMGR(monthly);
+  // CMGR is only meaningful for time-series data
+  const cmgr = !isAppMode ? calcCMGR(monthly) : null;
 
   // ── 1. Overage Alert ──────────────────────────────────────────────────────
-  if (monthly.length >= 6) {
+  // Time-series: recent 3-month avg significantly above prior baseline
+  if (!isAppMode && monthly.length >= 6) {
     const recentAvg = avg(monthly.slice(-3).map(m => m.messages));
     const baseAvg   = avg(monthly.slice(0, -3).map(m => m.messages));
     const overPct   = Math.round((recentAvg - baseAvg) / baseAvg * 100);
@@ -1578,10 +1573,26 @@ function renderCTA(data, isAppMode) {
       });
     }
   }
+  // App mode: single application dominates total traffic — concentration and overuse risk
+  if (isAppMode && apps.length >= 2) {
+    const totalMsg = apps.reduce((s, a) => s + (a.messages || 0), 0);
+    const topApp   = [...apps].sort((a, b) => b.messages - a.messages)[0];
+    const topPct   = totalMsg > 0 ? Math.round(topApp.messages / totalMsg * 100) : 0;
+    if (topPct >= 50) {
+      signals.push({
+        category: '⚠️ Overage Alert',
+        trigger:  `<strong>${topApp.name}</strong> accounts for <strong>${topPct}%</strong> of all ${mll} — extreme traffic concentration on a single integration creates overuse exposure and single-point-of-failure risk.`,
+        level:    'critical',
+        label:    'Critical',
+        action:   'Review capacity allocation for the dominant application. Assess whether additional workers or a higher-tier license are needed to safely cover its peak demand, and evaluate load-distribution options.'
+      });
+    }
+  }
 
   // ── 2. Attrition Risk ─────────────────────────────────────────────────────
+  // Time-series: 3 consecutive monthly declines
   if (!isAppMode && monthly.length >= 3) {
-    const last3 = monthly.slice(-3).map(m => m.messages);
+    const last3   = monthly.slice(-3).map(m => m.messages);
     const allDown = last3.every((v, i) => i === 0 || v < last3[i - 1]);
     if (allDown) {
       signals.push({
@@ -1593,6 +1604,7 @@ function renderCTA(data, isAppMode) {
       });
     }
   }
+  // Platform active-day rate — applies to any mode where the data is available
   if (data.activeDays && data.totalDays && data.activeRate < 50) {
     signals.push({
       category: '📉 Attrition Risk',
@@ -1602,6 +1614,7 @@ function renderCTA(data, isAppMode) {
       action:   'Conduct an adoption health-check. Identify idle integration patterns and propose targeted enablement workshops or co-build sessions to drive consistent utilisation.'
     });
   }
+  // Time-series: sustained CMGR decline
   if (!isAppMode && cmgr !== null && +cmgr < -10 && monthly.length >= 4) {
     signals.push({
       category: '📉 Attrition Risk',
@@ -1611,9 +1624,26 @@ function renderCTA(data, isAppMode) {
       action:   'Escalate to CSM and Account Executive. Present a structured success plan with measurable adoption milestones tied to the renewal timeline.'
     });
   }
+  // App mode: dormant applications signal abandoned investments
+  if (isAppMode && apps.length > 0) {
+    const totalMsg = apps.reduce((s, a) => s + (a.messages || 0), 0);
+    const dormant  = totalMsg > 0
+      ? apps.filter(a => (a.messages || 0) / totalMsg < 0.01)
+      : [];
+    if (dormant.length > 0 && dormant.length / apps.length >= 0.2) {
+      signals.push({
+        category: '📉 Attrition Risk',
+        trigger:  `<strong>${dormant.length}</strong> of ${apps.length} applications each contribute less than 1% of total ${mll} — dormant integrations may indicate abandoned or underused investments.`,
+        level:    'high',
+        label:    'High',
+        action:   'Conduct a portfolio review of low-activity integrations. Identify which were never fully adopted vs. which saw declining usage, and use findings to frame the renewal value conversation.'
+      });
+    }
+  }
 
   // ── 3. Upsell Opportunity ─────────────────────────────────────────────────
-  if (cmgr !== null && +cmgr >= 8 && monthly.length >= 4) {
+  // Time-series: strong or moderate CMGR growth
+  if (!isAppMode && cmgr !== null && +cmgr >= 8 && monthly.length >= 4) {
     const proj = projectNext(monthly);
     signals.push({
       category: '📈 Upsell Opportunity',
@@ -1622,7 +1652,7 @@ function renderCTA(data, isAppMode) {
       label:    'Growth',
       action:   'Model the overage timeline and present a pre-committed capacity upgrade with a volume discount. Position a CloudHub 2.0 / Flex architecture review to support scale.'
     });
-  } else if (cmgr !== null && +cmgr >= 3 && +cmgr < 8 && monthly.length >= 4) {
+  } else if (!isAppMode && cmgr !== null && +cmgr >= 3 && +cmgr < 8 && monthly.length >= 4) {
     signals.push({
       category: '📈 Upsell Opportunity',
       trigger:  `Steady growth at CMGR <strong>+${cmgr}%</strong>. Usage is expanding predictably — a well-timed expansion conversation can deepen the account before competitive pressure emerges.`,
@@ -1630,6 +1660,20 @@ function renderCTA(data, isAppMode) {
       label:    'Growth',
       action:   'Introduce the MuleSoft capability roadmap. Identify 2–3 new integration use cases aligned to the customer\'s business initiatives and quantify the ROI uplift.'
     });
+  }
+  // App mode: significant production footprint signals readiness for tier or feature expansion
+  if (isAppMode && apps.length > 0) {
+    const prodApps    = apps.filter(a => (a.env||'').toLowerCase().includes('prod'));
+    const totalVcores = prodApps.reduce((s, a) => s + (a.vcores || 0), 0);
+    if (prodApps.length >= 3 && totalVcores >= 4) {
+      signals.push({
+        category: '📈 Upsell Opportunity',
+        trigger:  `<strong>${prodApps.length}</strong> production applications consuming <strong>${totalVcores.toFixed(1)}</strong> total vCores — a mature integration footprint with clear headroom to expand platform tier or capability.`,
+        level:    'growth',
+        label:    'Growth',
+        action:   'Present a capacity roadmap showing current vCore utilisation vs. available headroom. Introduce CloudHub 2.0, Anypoint Flex Gateway, or advanced API management features as natural next steps aligned to business growth.'
+      });
+    }
   }
 
   // ── 4. Operational Risk ───────────────────────────────────────────────────
@@ -1649,8 +1693,8 @@ function renderCTA(data, isAppMode) {
         action:   'Immediate HA architecture review. Present business continuity risk of single-worker production deployments. Position CloudHub 2.0 or RTF HA upgrade as a priority before the next major release cycle.'
       });
     }
-    const prodApps = apps.filter(a => (a.env||'').toLowerCase().includes('prod'));
-    const sandboxPct = Math.round((apps.length - prodApps.length) / apps.length * 100);
+    const prodAppsOR  = apps.filter(a => (a.env||'').toLowerCase().includes('prod'));
+    const sandboxPct  = Math.round((apps.length - prodAppsOR.length) / apps.length * 100);
     if (sandboxPct > 60) {
       signals.push({
         category: '🔴 Operational Risk',
@@ -1663,6 +1707,7 @@ function renderCTA(data, isAppMode) {
   }
 
   // ── 5. Feature Adoption ───────────────────────────────────────────────────
+  // App mode: low flows per app indicates shallow integration complexity
   if (isAppMode && data.avgFlowsPerApp > 0 && data.avgFlowsPerApp < 3) {
     signals.push({
       category: '🔍 Feature Adoption',
@@ -1672,6 +1717,20 @@ function renderCTA(data, isAppMode) {
       action:   'Run an integration maturity assessment. Showcase advanced platform capabilities — DataWeave transformations, API governance, reusable assets in Anypoint Exchange — to expand depth of usage.'
     });
   }
+  // App mode: no production apps at all — platform not yet in active business use
+  if (isAppMode && apps.length > 0) {
+    const hasProd = apps.some(a => (a.env||'').toLowerCase().includes('prod'));
+    if (!hasProd) {
+      signals.push({
+        category: '🔍 Feature Adoption',
+        trigger:  `No production applications detected across <strong>${apps.length}</strong> total apps — the platform appears to be sandbox-only with no live business integrations.`,
+        level:    'medium',
+        label:    'Medium',
+        action:   'Engage the customer on production readiness. Identify 1–2 sandbox integrations closest to go-live and offer an architecture review or guided enablement to accelerate promotion.'
+      });
+    }
+  }
+  // Time-series: recent volume far below historical average
   if (!isAppMode && monthly.length >= 3) {
     const recent3Avg = avg(monthly.slice(-3).map(m => m.messages));
     const overallAvg = avg(monthly.map(m => m.messages));
