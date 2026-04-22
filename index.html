@@ -236,6 +236,15 @@
     .replica-dots{display:flex;gap:3px;flex-wrap:wrap;max-width:100px}
     .dot{width:7px;height:7px;border-radius:50%;background:var(--blue);opacity:.75}
     .dot.extra{background:var(--muted);opacity:.4}
+    /* App filters */
+    .app-filters{display:flex;flex-wrap:wrap;gap:.5rem;padding:.1rem 0 1rem;align-items:center}
+    .filter-input{padding:.38rem .7rem;border:1px solid #E2E8F0;border-radius:.45rem;font-size:.78rem;min-width:180px;outline:none;color:var(--text);transition:border-color .15s}
+    .filter-input:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(0,119,197,.1)}
+    .filter-select{padding:.38rem .6rem;border:1px solid #E2E8F0;border-radius:.45rem;font-size:.78rem;background:#fff;outline:none;cursor:pointer;color:var(--text);transition:border-color .15s}
+    .filter-select:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(0,119,197,.1)}
+    .filter-reset-btn{padding:.38rem .75rem;border:1px solid #E2E8F0;border-radius:.45rem;font-size:.75rem;cursor:pointer;background:#F8FAFC;color:var(--muted);transition:all .15s;white-space:nowrap}
+    .filter-reset-btn:hover{background:#FEF2F2;border-color:#FCA5A5;color:#DC2626}
+    .filter-count{font-size:.72rem;font-weight:500;color:var(--muted);padding:.15rem .55rem;background:#F1F5F9;border-radius:99px}
     .env-badge{display:inline-block;padding:.15rem .55rem;border-radius:99px;font-size:.75rem;font-weight:700;text-transform:capitalize}
     .env-badge.prod{background:#ECFDF5;color:#065F46}
     .env-badge.sandbox{background:#EFF6FF;color:#1D4ED8}
@@ -488,7 +497,33 @@
 
     <!-- App details — app mode only -->
     <div class="table-card" id="app-table-card" style="display:none">
-      <div class="card-title">Application Details</div>
+      <div class="card-title">
+        Application Details
+        <span id="app-filter-count" class="filter-count"></span>
+      </div>
+      <div class="app-filters">
+        <input  type="text" id="filter-app-name" class="filter-input" placeholder="🔍 Search by name…">
+        <select id="filter-env"     class="filter-select">
+          <option value="">All Environments</option>
+          <option value="production">Production</option>
+          <option value="sandbox">Sandbox</option>
+        </select>
+        <select id="filter-workers" class="filter-select">
+          <option value="">Any Workers</option>
+          <option value="eq1">= 1  (No HA)</option>
+          <option value="gte2">≥ 2  (HA)</option>
+          <option value="gte4">≥ 4</option>
+        </select>
+        <select id="filter-vcores"  class="filter-select">
+          <option value="">Any vCores</option>
+          <option value="lt1">&lt; 1</option>
+          <option value="eq1">= 1</option>
+          <option value="gt1">&gt; 1</option>
+          <option value="gte2">≥ 2</option>
+          <option value="gte4">≥ 4</option>
+        </select>
+        <button class="filter-reset-btn" onclick="resetAppFilters()">✕ Clear filters</button>
+      </div>
       <table>
         <thead><tr><th>Application</th><th>Environment</th><th>Workers</th><th>vCores</th><th>Avg Daily Flows</th><th>Avg Monthly Msgs</th><th>Total Messages</th><th>Share</th></tr></thead>
         <tbody id="tbl-apps"></tbody>
@@ -1396,22 +1431,75 @@ function renderTablePeaks(peakDays, avgPerDay) {
   }).join('');
 }
 
+let _appsData = [], _appsTotal = 0;
+
 function renderTableApps(apps, total) {
-  document.getElementById('tbl-apps').innerHTML = apps.map(a => {
-    const envClass = a.env==='production'?'prod':'sandbox';
-    const envBadge = a.env ? `<span class="env-badge ${envClass}">${a.env}</span>` : '—';
-    const runtime  = a.runtime ? a.runtime.split(':')[0] : '—';
-    return `<tr>
-      <td><strong>${a.name}</strong></td>
-      <td>${envBadge}</td>
-      <td>${a.workers!=null?a.workers:'—'}</td>
-      <td>${a.vcores!=null?a.vcores:'—'}</td>
-      <td>${a.avgFlows!=null?a.avgFlows.toFixed(1):'—'}</td>
-      <td>${a.avgMonthly!=null?fmtFull(a.avgMonthly):'—'}</td>
-      <td>${fmtFull(a.messages)}</td>
-      <td>${a.pct||'—'}</td>
-    </tr>`;
-  }).join('');
+  _appsData  = apps;
+  _appsTotal = total;
+  // Wire all filter inputs — safe to re-wire on each load
+  const ids = ['filter-app-name', 'filter-env', 'filter-workers', 'filter-vcores'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.oninput = el.onchange = applyAppFilters;
+  });
+  applyAppFilters();
+}
+
+function applyAppFilters() {
+  const name    = (document.getElementById('filter-app-name')?.value  || '').toLowerCase().trim();
+  const env     = (document.getElementById('filter-env')?.value       || '').toLowerCase();
+  const workers = document.getElementById('filter-workers')?.value    || '';
+  const vcores  = document.getElementById('filter-vcores')?.value     || '';
+
+  const filtered = _appsData.filter(a => {
+    if (name && !a.name.toLowerCase().includes(name)) return false;
+    if (env  && (a.env || '').toLowerCase() !== env)  return false;
+    if (workers) {
+      const w = a.workers;
+      if (w == null)            return false;
+      if (workers==='eq1'  && w !== 1) return false;
+      if (workers==='gte2' && w  < 2)  return false;
+      if (workers==='gte4' && w  < 4)  return false;
+    }
+    if (vcores) {
+      const v = a.vcores;
+      if (v == null)            return false;
+      if (vcores==='lt1'  && v >=  1) return false;
+      if (vcores==='eq1'  && v !==  1) return false;
+      if (vcores==='gt1'  && v <=  1) return false;
+      if (vcores==='gte2' && v  <  2)  return false;
+      if (vcores==='gte4' && v  <  4)  return false;
+    }
+    return true;
+  });
+
+  const isFiltered = name || env || workers || vcores;
+  const countEl = document.getElementById('app-filter-count');
+  if (countEl) countEl.textContent = isFiltered ? `${filtered.length} of ${_appsData.length} shown` : '';
+
+  document.getElementById('tbl-apps').innerHTML = filtered.length
+    ? filtered.map(a => {
+        const envClass = a.env==='production'?'prod':'sandbox';
+        const envBadge = a.env ? `<span class="env-badge ${envClass}">${a.env}</span>` : '—';
+        return `<tr>
+          <td><strong>${a.name}</strong></td>
+          <td>${envBadge}</td>
+          <td>${a.workers!=null?a.workers:'—'}</td>
+          <td>${a.vcores!=null?a.vcores:'—'}</td>
+          <td>${a.avgFlows!=null?a.avgFlows.toFixed(1):'—'}</td>
+          <td>${a.avgMonthly!=null?fmtFull(a.avgMonthly):'—'}</td>
+          <td>${fmtFull(a.messages)}</td>
+          <td>${a.pct||'—'}</td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:1.5rem 0">No applications match the current filters.</td></tr>';
+}
+
+function resetAppFilters() {
+  const el = id => document.getElementById(id);
+  const n = el('filter-app-name'); if (n) n.value = '';
+  ['filter-env','filter-workers','filter-vcores'].forEach(id => { const s=el(id); if(s) s.selectedIndex=0; });
+  applyAppFilters();
 }
 
 // ── PDF download ──────────────────────────────────────────────────────────────
