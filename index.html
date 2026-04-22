@@ -1544,6 +1544,10 @@ function clearAllData() {
   const peaksWrap = document.getElementById('chart-peaks-wrap');
   if (peaksWrap) peaksWrap.innerHTML = '<canvas id="chart-peaks"></canvas>';
 
+  // Reset app filter bar state
+  _appsData = []; _appsTotal = 0;
+  resetAppFilters();
+
   // Clear file input so the same file can be re-uploaded and to drop the blob reference
   const fi = document.getElementById('file-input');
   if (fi) { fi.value = ''; fi.type='text'; fi.type='file'; }
