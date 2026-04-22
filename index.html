@@ -190,6 +190,23 @@
     .insight.yellow{border-color:var(--yellow);background:var(--yellow-bg)}
     .insight.red   {border-color:var(--red);   background:var(--red-bg)}
     .insight.purple{border-color:var(--purple);background:var(--purple-bg)}
+    /* Strategic CTA */
+    .cta-section{background:var(--white);border-radius:.875rem;padding:1.375rem;box-shadow:0 1px 4px rgba(0,0,0,.07);margin-bottom:1.75rem}
+    .cta-subtitle{font-size:.72rem;color:var(--muted);margin:-0.3rem 0 1rem;font-style:italic}
+    .cta-table-wrap{overflow-x:auto}
+    .cta-table{width:100%;border-collapse:collapse;font-size:.8rem}
+    .cta-table thead tr{background:#F8FAFC}
+    .cta-table th{padding:.6rem .85rem;text-align:left;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:2px solid var(--bg);white-space:nowrap}
+    .cta-table td{padding:.7rem .85rem;border-bottom:1px solid var(--bg);vertical-align:top;line-height:1.45}
+    .cta-table tbody tr:last-child td{border-bottom:none}
+    .cta-table tbody tr:hover{background:#FAFBFC}
+    .cta-table td:first-child{font-weight:700;white-space:nowrap;min-width:160px}
+    .cta-table td:nth-child(3){white-space:nowrap}
+    .cta-level{display:inline-block;padding:.18rem .6rem;border-radius:99px;font-size:.7rem;font-weight:700}
+    .cta-level.critical{background:#FEF2F2;color:#DC2626}
+    .cta-level.high{background:#FFFBEB;color:#B45309}
+    .cta-level.medium{background:#EFF6FF;color:#1D4ED8}
+    .cta-level.growth{background:#ECFDF5;color:#059669}
     .insight-title{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.25rem}
     .insight.blue  .insight-title{color:var(--blue-dark)}
     .insight.teal  .insight-title{color:#006b9e}
@@ -439,6 +456,25 @@
     <div class="insights-card">
       <div class="card-title" id="insights-title">Analytics &amp; Insights</div>
       <div class="insights-grid" id="insights-grid"></div>
+    </div>
+
+    <!-- Strategic CTA — Overview mode only -->
+    <div class="cta-section" id="cta-section" style="display:none">
+      <div class="card-title">🎯 Strategic Call to Action</div>
+      <p class="cta-subtitle">AI-generated signals based on observed usage patterns. Validate with customer before acting.</p>
+      <div class="cta-table-wrap">
+        <table class="cta-table">
+          <thead>
+            <tr>
+              <th>Signal Category</th>
+              <th>Trigger Rule</th>
+              <th>Risk / Opportunity</th>
+              <th>Recommended Playbook Action</th>
+            </tr>
+          </thead>
+          <tbody id="cta-table-body"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Breakdown table — title adapts -->
@@ -1004,6 +1040,15 @@ function renderDashboard(data, fileType) {
   // Insights
   renderInsights(data, isAppMode, customer, cmgr, projected);
 
+  // Strategic CTA — Overview mode only
+  const ctaEl = document.getElementById('cta-section');
+  if (!isBreakdown) {
+    renderCTA(data, isAppMode);
+    ctaEl.style.display = 'block';
+  } else {
+    ctaEl.style.display = 'none';
+  }
+
   // Tables
   renderTableBreakdown(data.monthly, data.totalMessages, isAppMode);
   if (hasTimeDim&&hasPeaks) renderTablePeaks(data.peakDays, data.avgPerDay);
@@ -1403,8 +1448,9 @@ function clearAllData() {
 
   // Wipe all rendered data from the DOM so nothing lingers in page memory
   const wipe = id => { const el=document.getElementById(id); if(el) el.innerHTML=''; };
-  wipe('exec-stats'); wipe('kpi-grid'); wipe('platform-grid'); wipe('insights-grid');
+  wipe('exec-stats'); wipe('kpi-grid'); wipe('platform-grid'); wipe('insights-grid'); wipe('cta-table-body');
   wipe('tbl-monthly'); wipe('tbl-apps'); wipe('tbl-peaks'); wipe('breakdown-table-head');
+  const ctaEl = document.getElementById('cta-section'); if (ctaEl) ctaEl.style.display = 'none';
   const dailyCtx = document.getElementById('chart-daily');
   if (dailyCtx) dailyCtx.replaceWith(dailyCtx.cloneNode(false));
   const peaksWrap = document.getElementById('chart-peaks-wrap');
@@ -1413,6 +1459,154 @@ function clearAllData() {
   // Clear file input so the same file can be re-uploaded and to drop the blob reference
   const fi = document.getElementById('file-input');
   if (fi) { fi.value = ''; fi.type='text'; fi.type='file'; }
+}
+
+// ── Strategic CTA ─────────────────────────────────────────────────────────────
+function renderCTA(data, isAppMode) {
+  const monthly  = data.monthly  || [];
+  const apps     = data.apps     || [];
+  const signals  = [];
+  const mll      = (data.metricLabel || 'Messages').toLowerCase();
+
+  // Helper: CMGR already available via calcCMGR but we need it locally
+  const cmgr = calcCMGR(monthly);
+
+  // ── 1. Overage Alert ──────────────────────────────────────────────────────
+  if (monthly.length >= 6) {
+    const recentAvg = avg(monthly.slice(-3).map(m => m.messages));
+    const baseAvg   = avg(monthly.slice(0, -3).map(m => m.messages));
+    const overPct   = Math.round((recentAvg - baseAvg) / baseAvg * 100);
+    if (overPct >= 30) {
+      signals.push({
+        category: '⚠️ Overage Alert',
+        trigger:  `Recent 3-month avg (${fmtFull(Math.round(recentAvg))} ${mll}) is <strong>+${overPct}%</strong> above the prior baseline. Current run-rate may exceed contracted entitlement.`,
+        level:    'critical',
+        label:    'Critical',
+        action:   'Validate consumption vs. purchased capacity immediately. Initiate an expansion conversation before the next billing cycle to avoid retroactive overage charges.'
+      });
+    }
+  }
+
+  // ── 2. Attrition Risk ─────────────────────────────────────────────────────
+  if (monthly.length >= 3) {
+    const last3 = monthly.slice(-3).map(m => m.messages);
+    const allDown = last3.every((v, i) => i === 0 || v < last3[i - 1]);
+    if (allDown) {
+      signals.push({
+        category: '📉 Attrition Risk',
+        trigger:  `${mll.charAt(0).toUpperCase()+mll.slice(1)} volume has declined for <strong>3 consecutive months</strong>${cmgr !== null ? ` (CMGR ${cmgr}%)` : ''}. Consistent decline is an early churn indicator.`,
+        level:    'high',
+        label:    'High',
+        action:   'Schedule an executive QBR within 30 days. Audit which integrations are no longer active and re-engage with a value realisation framework to reverse the trend.'
+      });
+    }
+  }
+  if (data.activeDays && data.totalDays && data.activeRate < 50) {
+    signals.push({
+      category: '📉 Attrition Risk',
+      trigger:  `Platform active only <strong>${data.activeRate}%</strong> of tracked days (${data.activeDays} of ${data.totalDays}). Low daily engagement signals potential shelfware.`,
+      level:    'high',
+      label:    'High',
+      action:   'Conduct an adoption health-check. Identify idle integration patterns and propose targeted enablement workshops or co-build sessions to drive consistent utilisation.'
+    });
+  }
+  if (cmgr !== null && +cmgr < -10 && monthly.length >= 4) {
+    signals.push({
+      category: '📉 Attrition Risk',
+      trigger:  `CMGR of <strong>${cmgr}%</strong> across the full period indicates sustained platform decline — not just a seasonal dip.`,
+      level:    'high',
+      label:    'High',
+      action:   'Escalate to CSM and Account Executive. Present a structured success plan with measurable adoption milestones tied to the renewal timeline.'
+    });
+  }
+
+  // ── 3. Upsell Opportunity ─────────────────────────────────────────────────
+  if (cmgr !== null && +cmgr >= 8 && monthly.length >= 4) {
+    const proj = projectNext(monthly);
+    signals.push({
+      category: '📈 Upsell Opportunity',
+      trigger:  `CMGR of <strong>+${cmgr}%</strong> over the reporting period${proj ? ` — projected next month: <strong>${fmtFull(proj)}</strong> ${mll}` : ''}. Current trajectory will exhaust current-tier capacity within 2–3 quarters.`,
+      level:    'growth',
+      label:    'Growth',
+      action:   'Model the overage timeline and present a pre-committed capacity upgrade with a volume discount. Position a CloudHub 2.0 / Flex architecture review to support scale.'
+    });
+  } else if (cmgr !== null && +cmgr >= 3 && +cmgr < 8 && monthly.length >= 4) {
+    signals.push({
+      category: '📈 Upsell Opportunity',
+      trigger:  `Steady growth at CMGR <strong>+${cmgr}%</strong>. Usage is expanding predictably — a well-timed expansion conversation can deepen the account before competitive pressure emerges.`,
+      level:    'growth',
+      label:    'Growth',
+      action:   'Introduce the MuleSoft capability roadmap. Identify 2–3 new integration use cases aligned to the customer\'s business initiatives and quantify the ROI uplift.'
+    });
+  }
+
+  // ── 4. Operational Risk ───────────────────────────────────────────────────
+  if (isAppMode && apps.length > 0) {
+    const prodNoHA = apps.filter(a => {
+      const isProd = (a.env||'').toLowerCase().includes('prod');
+      const singleWorker = a.workers !== null && a.workers < 2;
+      return isProd && singleWorker;
+    });
+    if (prodNoHA.length > 0) {
+      const top = [...prodNoHA].sort((a, b) => b.messages - a.messages)[0];
+      signals.push({
+        category: '🔴 Operational Risk',
+        trigger:  `<strong>${prodNoHA.length}</strong> production app${prodNoHA.length > 1 ? 's run' : ' runs'} without High Availability (single worker). Highest-risk: <strong>${top.name}</strong> — ${fmtFull(top.messages)} ${mll}.`,
+        level:    'critical',
+        label:    'Critical',
+        action:   'Immediate HA architecture review. Present business continuity risk of single-worker production deployments. Position CloudHub 2.0 or RTF HA upgrade as a priority before the next major release cycle.'
+      });
+    }
+    const prodApps = apps.filter(a => (a.env||'').toLowerCase().includes('prod'));
+    const sandboxPct = Math.round((apps.length - prodApps.length) / apps.length * 100);
+    if (sandboxPct > 60) {
+      signals.push({
+        category: '🔴 Operational Risk',
+        trigger:  `<strong>${sandboxPct}%</strong> of applications are in non-production environments. Heavy sandbox concentration limits business value delivery and ROI justification.`,
+        level:    'medium',
+        label:    'Medium',
+        action:   'Identify integrations ready for production promotion. Offer a production readiness assessment and architecture review to accelerate go-live timelines.'
+      });
+    }
+  }
+
+  // ── 5. Feature Adoption ───────────────────────────────────────────────────
+  if (isAppMode && data.avgFlowsPerApp > 0 && data.avgFlowsPerApp < 3) {
+    signals.push({
+      category: '🔍 Feature Adoption',
+      trigger:  `Average of only <strong>${data.avgFlowsPerApp}</strong> flows per application — low complexity indicates limited use of DataWeave, API policies, or advanced connectors.`,
+      level:    'medium',
+      label:    'Medium',
+      action:   'Run an integration maturity assessment. Showcase advanced platform capabilities — DataWeave transformations, API governance, reusable assets in Anypoint Exchange — to expand depth of usage.'
+    });
+  }
+  if (!isAppMode && monthly.length >= 3) {
+    const recent3Avg = avg(monthly.slice(-3).map(m => m.messages));
+    const overallAvg = avg(monthly.map(m => m.messages));
+    if (recent3Avg > 0 && recent3Avg < overallAvg * 0.3) {
+      signals.push({
+        category: '🔍 Feature Adoption',
+        trigger:  `Recent monthly volume (<strong>${fmtFull(Math.round(recent3Avg))}</strong> ${mll} avg) is significantly below the historical mean — suggests reduced platform engagement or workload migration away from MuleSoft.`,
+        level:    'medium',
+        label:    'Medium',
+        action:   'Assess whether workloads have been migrated off-platform. If so, initiate a competitive displacement conversation. If not, engage CSM to identify untapped use cases.'
+      });
+    }
+  }
+
+  if (!signals.length) {
+    document.getElementById('cta-table-body').innerHTML =
+      '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:1.5rem">No critical signals detected based on available data.</td></tr>';
+    return;
+  }
+
+  document.getElementById('cta-table-body').innerHTML = signals.map(s => `
+    <tr>
+      <td>${s.category}</td>
+      <td>${s.trigger}</td>
+      <td><span class="cta-level ${s.level}">${s.label}</span></td>
+      <td>${s.action}</td>
+    </tr>`).join('');
 }
 
 function resetToUpload() {
