@@ -1488,7 +1488,7 @@ function renderCTA(data, isAppMode) {
   }
 
   // ── 2. Attrition Risk ─────────────────────────────────────────────────────
-  if (monthly.length >= 3) {
+  if (!isAppMode && monthly.length >= 3) {
     const last3 = monthly.slice(-3).map(m => m.messages);
     const allDown = last3.every((v, i) => i === 0 || v < last3[i - 1]);
     if (allDown) {
@@ -1510,7 +1510,7 @@ function renderCTA(data, isAppMode) {
       action:   'Conduct an adoption health-check. Identify idle integration patterns and propose targeted enablement workshops or co-build sessions to drive consistent utilisation.'
     });
   }
-  if (cmgr !== null && +cmgr < -10 && monthly.length >= 4) {
+  if (!isAppMode && cmgr !== null && +cmgr < -10 && monthly.length >= 4) {
     signals.push({
       category: '📉 Attrition Risk',
       trigger:  `CMGR of <strong>${cmgr}%</strong> across the full period indicates sustained platform decline — not just a seasonal dip.`,
