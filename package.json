@@ -5,7 +5,6 @@
   "main": "index.html",
   "scripts": {
     "dev": "npx serve . --listen 3000",
-    "build": "echo 'No build step needed — vanilla HTML/CSS/JS single-file app'",
     "lint": "npx eslint .",
     "deploy": "vercel --prod"
   },
